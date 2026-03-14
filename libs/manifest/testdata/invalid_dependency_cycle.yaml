@@ -1,0 +1,14 @@
+kind: vibe.app/v1
+id: com.example.cycle
+name: Cycle App
+version: 1.0.0
+services:
+  - name: a
+    image: nginx:latest
+    dependOn: ["b"]
+  - name: b
+    image: nginx:latest
+    dependOn: ["c"]
+  - name: c
+    image: nginx:latest
+    dependOn: ["a"]

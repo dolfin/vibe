@@ -1,0 +1,9 @@
+kind: vibe.app/v1
+id: com.example.missingvol
+name: Missing Volume App
+version: 1.0.0
+services:
+  - name: db
+    image: postgres:16
+    stateVolumes:
+      - nonexistent:/var/lib/postgresql/data

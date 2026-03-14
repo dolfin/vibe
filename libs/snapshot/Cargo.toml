@@ -1,0 +1,4 @@
+[package]
+name = "vibe-snapshot"
+version.workspace = true
+edition.workspace = true

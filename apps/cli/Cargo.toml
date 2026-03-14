@@ -1,0 +1,21 @@
+[package]
+name = "vibe-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "vibe"
+path = "src/main.rs"
+
+[dependencies]
+vibe-manifest = { path = "../../libs/manifest" }
+vibe-signing = { path = "../../libs/signing" }
+clap = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+zip = { workspace = true }
+colored = { workspace = true }
+chrono = { workspace = true }
+ed25519-dalek = { workspace = true }

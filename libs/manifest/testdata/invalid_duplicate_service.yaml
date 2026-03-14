@@ -1,0 +1,9 @@
+kind: vibe.app/v1
+id: com.example.dup
+name: Duplicate Service App
+version: 1.0.0
+services:
+  - name: web
+    image: nginx:latest
+  - name: web
+    image: httpd:latest

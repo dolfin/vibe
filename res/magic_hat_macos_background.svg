@@ -1,0 +1,84 @@
+
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="base" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14004F" />
+      <stop offset="100%" stop-color="#2B0A9A" />
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="50%" cy="38%" r="54%">
+      <stop offset="0%" stop-color="#8A36FF" stop-opacity="0.62" />
+      <stop offset="46%" stop-color="#6123E2" stop-opacity="0.24" />
+      <stop offset="100%" stop-color="#2B0A9A" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="blueGlow" cx="24%" cy="86%" r="42%">
+      <stop offset="0%" stop-color="#11D8FF" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#11D8FF" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="edgeGlow" cx="86%" cy="20%" r="36%">
+      <stop offset="0%" stop-color="#4A1CFF" stop-opacity="0.24" />
+      <stop offset="100%" stop-color="#4A1CFF" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="72%">
+      <stop offset="48%" stop-color="#070018" stop-opacity="0" />
+      <stop offset="100%" stop-color="#070018" stop-opacity="0.54" />
+    </radialGradient>
+    <linearGradient id="foldFill" x1="8%" y1="6%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F7F7F8" />
+      <stop offset="68%" stop-color="#E7E7EA" />
+      <stop offset="100%" stop-color="#D7D7DB" />
+    </linearGradient>
+    <linearGradient id="foldVerticalShadow" x1="680" y1="252" x2="592" y2="252" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#040012" stop-opacity="0.32" />
+      <stop offset="38%" stop-color="#12004B" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#12004B" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="foldBottomShadow" x1="740" y1="378" x2="740" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#040012" stop-opacity="0.24" />
+      <stop offset="100%" stop-color="#12004B" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="foldHighlight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.28" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </linearGradient>
+    <filter id="foldShadowBlur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" />
+    </filter>
+    <path
+      id="pageShape"
+      d="M212 126H614L866 378V964C866 982.778 850.778 998 832 998H210C191.222 998 176 982.778 176 964V160C176 141.222 191.222 126 210 126H212Z"
+    />
+    <clipPath id="pageClip">
+      <use href="#pageShape" />
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#pageClip)">
+    <use href="#pageShape" fill="url(#base)" />
+    <rect x="176" y="126" width="690" height="872" fill="url(#centerGlow)" />
+    <rect x="176" y="126" width="690" height="872" fill="url(#blueGlow)" />
+    <rect x="176" y="126" width="690" height="872" fill="url(#edgeGlow)" />
+    <rect x="176" y="126" width="690" height="872" fill="url(#vignette)" />
+
+    <path
+      d="M614 126L614 312C614 348.451 643.549 378 680 378L680 396C633.608 396 596 358.392 596 312L596 126Z"
+      fill="url(#foldVerticalShadow)"
+      filter="url(#foldShadowBlur)"
+      opacity="0.9"
+    />
+    <path
+      d="M680 378H866V404H680C649.509 404 620.741 391.528 598.994 369.822L614.55 354.235C632.248 371.891 655.741 381.601 680 381.601H866V378Z"
+      fill="url(#foldBottomShadow)"
+      filter="url(#foldShadowBlur)"
+      opacity="0.82"
+    />
+
+    <path
+      d="M614 126L866 378H680C643.549 378 614 348.451 614 312V126Z"
+      fill="url(#foldFill)"
+    />
+    <path
+      d="M614 126L866 378H680C643.549 378 614 348.451 614 312V126Z"
+      fill="url(#foldHighlight)"
+    />
+  </g>
+</svg>

@@ -1,0 +1,7 @@
+kind: vibe.app/v1
+id: com.example.bad
+name: Bad Version App
+version: not-a-version
+services:
+  - name: web
+    image: nginx:latest

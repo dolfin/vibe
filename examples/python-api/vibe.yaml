@@ -1,0 +1,29 @@
+kind: vibe.app/v1
+id: com.example.python-api
+name: Python API
+version: "1.0.0"
+icon: assets/icon.png
+
+services:
+  - name: api
+    image: python:3.12-slim
+    command: ["python", "app.py"]
+    ports:
+      - container: 8000
+    dependOn:
+      - redis
+
+  - name: redis
+    image: redis:7-alpine
+    ports:
+      - container: 6379
+
+security:
+  network: true
+
+secrets:
+  - name: API_SECRET
+    required: true
+
+publisher:
+  name: Vibe Examples

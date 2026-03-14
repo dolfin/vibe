@@ -1,0 +1,18 @@
+kind: vibe.app/v1
+id: com.example.nodejs-todo
+name: Node.js Todo App
+version: "1.0.0"
+icon: assets/icon.png
+
+services:
+  - name: web
+    image: node:20-alpine
+    command: ["node", "server.js"]
+    ports:
+      - container: 3000
+
+security:
+  network: true
+
+publisher:
+  name: Vibe Examples

@@ -1,0 +1,10 @@
+kind: vibe.app/v1
+id: com.example.traversal
+name: Path Traversal App
+version: 1.0.0
+services:
+  - name: web
+    image: nginx:latest
+    mounts:
+      - source: ../../../etc/passwd
+        target: /data

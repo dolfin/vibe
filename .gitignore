@@ -1,0 +1,37 @@
+# Rust
+/target/
+**/target/
+**/*.rs.bk
+# Note: Cargo.lock is tracked since this repo contains binary crates
+
+# Swift
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+DerivedData/
+
+# Proto generated
+libs/rpc/src/generated/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build output
+/build/
+
+# Package artifacts
+*.vibeapp
+*.sig
+
+# Keys (never commit private keys)
+*.key
+!*.pub
+
+# Environment
+.env
+.env.*

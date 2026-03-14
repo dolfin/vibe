@@ -1,0 +1,6 @@
+kind: vibe.app/v1
+name: No ID App
+version: 1.0.0
+services:
+  - name: web
+    image: nginx:latest

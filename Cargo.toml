@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    "libs/manifest",
+    "libs/signing",
+    "libs/rpc",
+    "libs/snapshot",
+    "libs/state-index",
+    "libs/compose-import",
+    "libs/container-runtime",
+    "apps/vm-supervisor",
+    "apps/cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+semver = { version = "1", features = ["serde"] }
+sha2 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+tonic = "0.12"
+prost = "0.13"
+tonic-build = "0.12"
+axum = "0.7"
+zip = "2"
+colored = "2"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+tempfile = "3"

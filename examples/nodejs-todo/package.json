@@ -1,0 +1,9 @@
+{
+  "name": "nodejs-todo",
+  "version": "1.0.0",
+  "description": "Simple Node.js Todo API - Vibe demo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

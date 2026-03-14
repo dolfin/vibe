@@ -1,0 +1,233 @@
+syntax = "proto3";
+package vibe.supervisor.v1;
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum ProjectStatus {
+    PROJECT_STATUS_UNKNOWN   = 0;
+    PROJECT_STATUS_STOPPED   = 1;
+    PROJECT_STATUS_STARTING  = 2;
+    PROJECT_STATUS_RUNNING   = 3;
+    PROJECT_STATUS_STOPPING  = 4;
+    PROJECT_STATUS_ERROR     = 5;
+}
+
+enum SnapshotReason {
+    SNAPSHOT_REASON_MANUAL         = 0;
+    SNAPSHOT_REASON_AUTOSAVE       = 1;
+    SNAPSHOT_REASON_BEFORE_UPGRADE = 2;
+    SNAPSHOT_REASON_BEFORE_RESTORE = 3;
+}
+
+enum LogLevel {
+    LOG_LEVEL_UNKNOWN = 0;
+    LOG_LEVEL_DEBUG   = 1;
+    LOG_LEVEL_INFO    = 2;
+    LOG_LEVEL_WARN    = 3;
+    LOG_LEVEL_ERROR   = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Shared messages
+// ---------------------------------------------------------------------------
+
+message PortMapping {
+    string service        = 1;
+    uint32 host_port      = 2;
+    uint32 container_port = 3;
+}
+
+message ServiceInfo {
+    string         name   = 1;
+    ProjectStatus  status = 2;
+    string         image  = 3;
+}
+
+message ProjectInfo {
+    string                    id       = 1;
+    string                    app_id   = 2;
+    string                    name     = 3;
+    ProjectStatus             status   = 4;
+    repeated PortMapping      ports    = 5;
+    repeated ServiceInfo      services = 6;
+}
+
+message SnapshotInfo {
+    string                          id         = 1;
+    int64                           timestamp  = 2; // unix epoch milliseconds
+    SnapshotReason                  reason     = 3;
+    map<string, string>             labels     = 4;
+    uint64                          size_bytes = 5;
+}
+
+message LogEntry {
+    int64    timestamp = 1; // unix epoch milliseconds
+    string   service   = 2;
+    LogLevel level     = 3;
+    string   message   = 4;
+}
+
+message ComposeValidationResult {
+    repeated string supported_fields   = 1;
+    repeated string unsupported_fields = 2;
+    repeated string warnings           = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Service definition
+// ---------------------------------------------------------------------------
+
+service Supervisor {
+    rpc EnsureProject       (EnsureProjectRequest)        returns (EnsureProjectResponse);
+    rpc OpenProject         (OpenProjectRequest)          returns (OpenProjectResponse);
+    rpc StartProject        (StartProjectRequest)         returns (StartProjectResponse);
+    rpc StopProject         (StopProjectRequest)          returns (StopProjectResponse);
+    rpc DeleteProjectRuntime(DeleteProjectRuntimeRequest)  returns (DeleteProjectRuntimeResponse);
+    rpc ListProjects        (ListProjectsRequest)         returns (ListProjectsResponse);
+    rpc GetProjectStatus    (GetProjectStatusRequest)     returns (GetProjectStatusResponse);
+    rpc GetProjectLogs      (GetProjectLogsRequest)       returns (stream LogEntry);
+    rpc SaveSnapshot        (SaveSnapshotRequest)         returns (SaveSnapshotResponse);
+    rpc RestoreSnapshot     (RestoreSnapshotRequest)      returns (RestoreSnapshotResponse);
+    rpc ListSnapshots       (ListSnapshotsRequest)        returns (ListSnapshotsResponse);
+    rpc DuplicateProject    (DuplicateProjectRequest)     returns (DuplicateProjectResponse);
+    rpc ImportPackage       (ImportPackageRequest)        returns (ImportPackageResponse);
+    rpc ValidateCompose     (ValidateComposeRequest)      returns (ValidateComposeResponse);
+    rpc ResolvePorts        (ResolvePortsRequest)         returns (ResolvePortsResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Request / Response messages
+// ---------------------------------------------------------------------------
+
+// EnsureProject - create or verify a project exists
+message EnsureProjectRequest {
+    string app_id       = 1;
+    string name         = 2;
+    string compose_yaml = 3; // raw docker-compose content
+}
+message EnsureProjectResponse {
+    ProjectInfo project = 1;
+    bool        created = 2; // true if newly created
+}
+
+// OpenProject - open an existing project for interaction
+message OpenProjectRequest {
+    string project_id = 1;
+}
+message OpenProjectResponse {
+    ProjectInfo project = 1;
+}
+
+// StartProject
+message StartProjectRequest {
+    string          project_id = 1;
+    repeated string services   = 2; // empty = all services
+}
+message StartProjectResponse {
+    ProjectInfo project = 1;
+}
+
+// StopProject
+message StopProjectRequest {
+    string          project_id      = 1;
+    repeated string services        = 2; // empty = all services
+    uint32          timeout_seconds = 3;
+}
+message StopProjectResponse {
+    ProjectInfo project = 1;
+}
+
+// DeleteProjectRuntime - remove containers/volumes but keep config
+message DeleteProjectRuntimeRequest {
+    string project_id     = 1;
+    bool   remove_volumes = 2;
+}
+message DeleteProjectRuntimeResponse {}
+
+// ListProjects
+message ListProjectsRequest {
+    string filter_app_id = 1; // optional: filter by app
+}
+message ListProjectsResponse {
+    repeated ProjectInfo projects = 1;
+}
+
+// GetProjectStatus
+message GetProjectStatusRequest {
+    string project_id = 1;
+}
+message GetProjectStatusResponse {
+    ProjectInfo project = 1;
+}
+
+// GetProjectLogs - server-streaming
+message GetProjectLogsRequest {
+    string          project_id = 1;
+    repeated string services   = 2; // empty = all
+    bool            follow     = 3;
+    uint32          tail_lines = 4; // 0 = all
+}
+
+// SaveSnapshot
+message SaveSnapshotRequest {
+    string              project_id = 1;
+    SnapshotReason      reason     = 2;
+    map<string, string> labels     = 3;
+}
+message SaveSnapshotResponse {
+    SnapshotInfo snapshot = 1;
+}
+
+// RestoreSnapshot
+message RestoreSnapshotRequest {
+    string project_id  = 1;
+    string snapshot_id = 2;
+}
+message RestoreSnapshotResponse {
+    ProjectInfo project = 1;
+}
+
+// ListSnapshots
+message ListSnapshotsRequest {
+    string project_id = 1;
+}
+message ListSnapshotsResponse {
+    repeated SnapshotInfo snapshots = 1;
+}
+
+// DuplicateProject
+message DuplicateProjectRequest {
+    string project_id = 1;
+    string new_name   = 2;
+}
+message DuplicateProjectResponse {
+    ProjectInfo project = 1;
+}
+
+// ImportPackage - import a .vbz / zip package
+message ImportPackageRequest {
+    string package_path = 1;
+    string name         = 2; // optional override
+}
+message ImportPackageResponse {
+    ProjectInfo project = 1;
+}
+
+// ValidateCompose
+message ValidateComposeRequest {
+    string compose_yaml = 1;
+}
+message ValidateComposeResponse {
+    bool                    valid  = 1;
+    ComposeValidationResult result = 2;
+}
+
+// ResolvePorts
+message ResolvePortsRequest {
+    string project_id = 1;
+}
+message ResolvePortsResponse {
+    repeated PortMapping ports = 1;
+}

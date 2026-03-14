@@ -1,0 +1,22 @@
+[package]
+name = "vibe-supervisor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+vibe-rpc = { path = "../../libs/rpc" }
+vibe-manifest = { path = "../../libs/manifest" }
+vibe-container-runtime = { path = "../../libs/container-runtime" }
+tonic = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+zip = { workspace = true }
+sha2 = { workspace = true }
+tokio-stream = "0.1"
