@@ -324,6 +324,11 @@ final class VMManager: NSObject {
         )
         config.directorySharingDevices = [fsConfig]
 
+        // Persistent data disk — mounted at /var/lib/containerd inside VM.
+        // Without this, overlayfs snapshots land on ramfs and pivot_root fails.
+        let diskAttachment = try VZDiskImageStorageDeviceAttachment(url: dataDiskURL, readOnly: false)
+        config.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)]
+
         // vsock — bidirectional host↔VM socket communication
         config.socketDevices = [VZVirtioSocketDeviceConfiguration()]
 
