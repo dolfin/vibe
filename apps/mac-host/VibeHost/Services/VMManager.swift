@@ -213,8 +213,8 @@ final class VMManager: NSObject {
         let fm = FileManager.default
         logger.info("Boot: kernel=\(kURL.path) exists=\(fm.fileExists(atPath: kURL.path))")
         logger.info("Boot: initrd=\(iURL.path) exists=\(fm.fileExists(atPath: iURL.path))")
-        logger.info("Boot: data=\(dataDiskURL.path) exists=\(fm.fileExists(atPath: dataDiskURL.path))")
-        logger.info("Boot: shared=\(sharedDir.path)")
+        logger.info("Boot: data=\(self.dataDiskURL.path) exists=\(fm.fileExists(atPath: self.dataDiskURL.path))")
+        logger.info("Boot: shared=\(self.sharedDir.path)")
 
         // Generate a fresh SSH keypair each boot — the public key goes to the shared dir
         // where vibe-init.sh picks it up for authorized_keys. This guarantees the host's
