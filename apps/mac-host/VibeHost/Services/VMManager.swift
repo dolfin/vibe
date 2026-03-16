@@ -51,6 +51,9 @@ final class VMManager: NSObject {
     /// TCP server fds keyed by local port (kept alive to accept new connections).
     private var bridgeServers: [UInt16: Int32] = [:]
 
+    /// Host ports currently occupied by active TCP bridges.
+    var activeBridgePorts: Set<UInt16> { Set(bridgeServers.keys) }
+
     private let vmDir: URL
 
     private static let imageBase =
