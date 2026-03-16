@@ -1,4 +1,0 @@
-[package]
-name = "vibe-compose-import"
-version.workspace = true
-edition.workspace = true

@@ -1,19 +1,13 @@
-.PHONY: bootstrap generate build test lint fmt clean bundle-vm demo-packages demo-verify
+.PHONY: bootstrap build test lint fmt clean bundle-vm demo-packages demo-verify
 
 bootstrap:
 	@echo "==> Installing Rust toolchain components..."
 	rustup component add clippy rustfmt
-	@echo "==> Checking for protoc..."
-	@which protoc > /dev/null 2>&1 || (echo "protoc not found. Install with: brew install protobuf" && exit 1)
 	@echo "==> Checking for Swift..."
 	@which swift > /dev/null 2>&1 || (echo "swift not found. Install Xcode Command Line Tools." && exit 1)
 	@echo "==> Bootstrap complete."
 
-generate:
-	@echo "==> Generating protobuf code..."
-	cd libs/rpc && cargo build
-
-build: generate
+build:
 	@echo "==> Building Rust workspace..."
 	cargo build --workspace
 	@echo "==> Building Swift host app..."
