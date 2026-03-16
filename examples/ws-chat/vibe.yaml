@@ -6,7 +6,7 @@ version: "1.0.0"
 services:
   - name: web
     image: node:20-alpine
-    command: ["sh", "-c", "npm install && node server.js"]
+    command: ["sh", "start.sh"]
     ports:
       - container: 3000
 

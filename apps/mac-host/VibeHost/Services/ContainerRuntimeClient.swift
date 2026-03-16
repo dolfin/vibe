@@ -125,7 +125,9 @@ enum ContainerRuntimeClient {
         // file, wait for nerdctl itself to exit (not the daemon), then read the CID.
         let cidFile = "/tmp/.vibe-cid-\(spec.name)"
         let errFile = "/tmp/.vibe-err-\(spec.name)"
-        let cmd = nerdctlArgs.joined(separator: " ")
+        // Shell-quote every argument so metacharacters in command strings (&&, |, etc.)
+        // are passed to nerdctl rather than interpreted by the VM's wrapper shell.
+        let cmd = nerdctlArgs.map(shellQuote).joined(separator: " ")
         let shellCmd = "\(cmd) >\(cidFile) 2>\(errFile) </dev/null & BGPID=$!; wait $BGPID; STATUS=$?; [ $STATUS -eq 0 ] && cat \(cidFile) || (cat \(errFile) >&2; exit $STATUS)"
 
         // Pass shellCmd as a single arg — sshd wraps it in `sh -c` automatically.
@@ -236,6 +238,16 @@ enum ContainerRuntimeClient {
             try await Task.sleep(nanoseconds: 2_000_000_000)
         }
         return lastResult
+    }
+
+    // MARK: - Shell helpers
+
+    /// POSIX single-quote a string so metacharacters are not interpreted by the
+    /// VM's wrapper shell. Safe characters are passed through unquoted.
+    private static func shellQuote(_ s: String) -> String {
+        let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-.:/=@,"))
+        if s.unicodeScalars.allSatisfy({ safe.contains($0) }) { return s }
+        return "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     // MARK: - Port helpers
