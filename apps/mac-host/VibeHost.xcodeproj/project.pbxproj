@@ -12,7 +12,6 @@
 		8A58D7612F65C90E00CB8654 /* Virtualization.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A58D7622F65C90E00CB8654 /* Virtualization.framework */; };
 /* End PBXBuildFile section */
 
-
 /* Begin PBXContainerItemProxy section */
 		AA000012AAAA000100000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
