@@ -68,6 +68,16 @@ struct ProjectDetailView: View {
                     controlButtons
                 }
 
+                if let msg = runtime.statusMessage(for: project) {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text(msg)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 if let error = runtime.lastError {
                     Text(error)
                         .font(.system(.caption, design: .monospaced))

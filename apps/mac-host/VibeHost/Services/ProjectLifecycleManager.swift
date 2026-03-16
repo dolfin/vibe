@@ -22,6 +22,8 @@ actor ProjectLifecycleManager {
         let containerPort: UInt16
         var hostPort: UInt16
         var running: Bool
+        /// Explicit mounts from the manifest (source is relative to the project dir).
+        let mounts: [(source: String, target: String)]
     }
 
     enum RunStatus: String {
@@ -86,6 +88,8 @@ actor ProjectLifecycleManager {
                 ? await ContainerRuntimeClient.findAvailablePort(preferred: containerPort)
                 : 0
 
+            let mounts = (svc.mounts ?? []).map { (source: $0.source, target: $0.target) }
+
             services.append(ServiceRunState(
                 name: svc.name,
                 image: image,
@@ -93,7 +97,8 @@ actor ProjectLifecycleManager {
                 containerName: "vibe-\(projectTag)-\(svc.name)",
                 containerPort: containerPort,
                 hostPort: hostPort,
-                running: false
+                running: false,
+                mounts: mounts
             ))
         }
 
@@ -137,16 +142,23 @@ actor ProjectLifecycleManager {
                 logger.warning("Failed to pull \(svc.image), trying local: \(error.localizedDescription)")
             }
 
+            // Start with the default project mount at /app for workingDir access.
+            // Append any explicit mounts from the manifest (e.g. nginx content dir).
+            var volumes = [DockerVolumeMount(hostPath: state.vmProjectPath, containerPath: "/app")]
+            for m in svc.mounts {
+                volumes.append(DockerVolumeMount(
+                    hostPath: "\(state.vmProjectPath)/\(m.source)",
+                    containerPath: m.target
+                ))
+            }
+
             let spec = ContainerSpec(
                 name: svc.containerName,
                 image: svc.image,
                 command: svc.command,
                 env: ["VIBE_PROJECT_ID": state.projectId],
                 ports: [],        // not needed with --network host
-                volumes: [DockerVolumeMount(
-                    hostPath: state.vmProjectPath,
-                    containerPath: "/app"
-                )],
+                volumes: volumes,
                 workingDir: "/app",
                 network: "host",  // bypass CNI; container port = VM port
                 labels: [
