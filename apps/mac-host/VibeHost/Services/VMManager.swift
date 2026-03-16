@@ -49,15 +49,16 @@ final class VMManager: NSObject {
     private var consoleLogFH: FileHandle?
     private var consolePipe: Pipe?
     /// TCP server fds keyed by local port (kept alive to accept new connections).
-    private var bridgeServers: [UInt16: Int32] = [:]
+    /// nonisolated(unsafe): all accesses are serialized by portLock.
+    nonisolated(unsafe) private var bridgeServers: [UInt16: Int32] = [:]
     /// Ports claimed by findAvailablePort but not yet promoted to a full bridge.
-    private var reservedPorts: Set<UInt16> = []
+    nonisolated(unsafe) private var reservedPorts: Set<UInt16> = []
     private let portLock = NSLock()
 
     /// Atomically check-and-reserve a port. Returns true if the port was free and
     /// is now reserved; false if it was already claimed by a bridge or reservation.
-    /// Caller must pass `isAvailable: true` only after verifying the OS hasn't taken it.
-    func claimPort(_ port: UInt16) -> Bool {
+    /// nonisolated so it can be called from any async context without await.
+    nonisolated func claimPort(_ port: UInt16) -> Bool {
         portLock.lock()
         defer { portLock.unlock() }
         let taken = bridgeServers[port] != nil || reservedPorts.contains(port)
@@ -65,7 +66,7 @@ final class VMManager: NSObject {
         return !taken
     }
 
-    func releasePort(_ port: UInt16) {
+    nonisolated func releasePort(_ port: UInt16) {
         portLock.lock()
         reservedPorts.remove(port)
         portLock.unlock()
