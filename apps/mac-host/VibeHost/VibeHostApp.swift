@@ -2,18 +2,29 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
-    static let vibeApp = UTType(importedAs: "ninja.gil.vibe.vibeapp")
+    static let vibeApp = UTType("ninja.gil.vibe.vibeapp")!
 }
 
 @main
 struct VibeHostApp: App {
     @State private var projectStore = ProjectStore()
-    @State private var runtimeState = RuntimeState()
+    @State private var libraryRuntime = RuntimeState()
     @State private var selectedProject: Project?
     @State private var pendingPackageURL: URL?
 
+    init() {
+        // Start the VM immediately so it's warm before any document opens.
+        Task { try? await VMManager.shared.ensureReady() }
+    }
+
     var body: some Scene {
-        WindowGroup {
+        // Primary: each .vibeapp file gets its own window
+        DocumentGroup(viewing: VibeAppDocument.self) { file in
+            DocumentWindowView(document: file.document)
+        }
+
+        // Optional library (Window menu > Library)
+        Window("Library", id: "library") {
             NavigationSplitView {
                 LibraryView(store: projectStore, selectedProject: $selectedProject)
                     .toolbar {
@@ -29,9 +40,11 @@ struct VibeHostApp: App {
                 if let project = selectedProject {
                     ProjectDetailView(
                         project: project,
-                        store: projectStore,
-                        runtime: runtimeState,
-                        onRemove: { selectedProject = nil }
+                        runtime: libraryRuntime,
+                        onRemove: {
+                            projectStore.removeProject(project)
+                            selectedProject = nil
+                        }
                     )
                 } else {
                     Text("Select a project")
@@ -50,18 +63,8 @@ struct VibeHostApp: App {
                     }
                 )
             }
-            .onOpenURL { url in
-                if url.pathExtension == "vibeapp" {
-                    pendingPackageURL = url
-                }
-            }
             .task {
-                do {
-                    try await VMManager.shared.ensureReady()
-                    await runtimeState.checkRuntime()
-                } catch {
-                    // VMManager sets .failed state — no extra handling needed here
-                }
+                await libraryRuntime.checkRuntime()
             }
         }
     }

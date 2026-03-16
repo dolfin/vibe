@@ -6,9 +6,8 @@ private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "ProjectD
 /// Detail view for a single project.
 struct ProjectDetailView: View {
     let project: Project
-    @Bindable var store: ProjectStore
     @Bindable var runtime: RuntimeState
-    var onRemove: () -> Void = {}
+    var onRemove: (() -> Void)? = nil
 
     @State private var showBrowser = false
 
@@ -277,12 +276,14 @@ struct ProjectDetailView: View {
         }
     }
 
+    @ViewBuilder
     private var removeSection: some View {
-        HStack {
-            Spacer()
-            Button("Remove Project", role: .destructive) {
-                store.removeProject(project)
-                onRemove()
+        if let onRemove {
+            HStack {
+                Spacer()
+                Button("Remove Project", role: .destructive) {
+                    onRemove()
+                }
             }
         }
     }
