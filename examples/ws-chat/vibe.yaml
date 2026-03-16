@@ -1,0 +1,17 @@
+kind: vibe.app/v1
+id: com.example.ws-chat
+name: Live Chat
+version: "1.0.0"
+
+services:
+  - name: web
+    image: node:20-alpine
+    command: ["sh", "-c", "npm install && node server.js"]
+    ports:
+      - container: 3000
+
+security:
+  network: true
+
+publisher:
+  name: Vibe Examples
