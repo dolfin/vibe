@@ -50,9 +50,26 @@ final class VMManager: NSObject {
     private var consolePipe: Pipe?
     /// TCP server fds keyed by local port (kept alive to accept new connections).
     private var bridgeServers: [UInt16: Int32] = [:]
+    /// Ports claimed by findAvailablePort but not yet promoted to a full bridge.
+    private var reservedPorts: Set<UInt16> = []
+    private let portLock = NSLock()
 
-    /// Host ports currently occupied by active TCP bridges.
-    var activeBridgePorts: Set<UInt16> { Set(bridgeServers.keys) }
+    /// Atomically check-and-reserve a port. Returns true if the port was free and
+    /// is now reserved; false if it was already claimed by a bridge or reservation.
+    /// Caller must pass `isAvailable: true` only after verifying the OS hasn't taken it.
+    func claimPort(_ port: UInt16) -> Bool {
+        portLock.lock()
+        defer { portLock.unlock() }
+        let taken = bridgeServers[port] != nil || reservedPorts.contains(port)
+        if !taken { reservedPorts.insert(port) }
+        return !taken
+    }
+
+    func releasePort(_ port: UInt16) {
+        portLock.lock()
+        reservedPorts.remove(port)
+        portLock.unlock()
+    }
 
     private let vmDir: URL
 
@@ -153,10 +170,16 @@ final class VMManager: NSObject {
     /// Forward host TCP:localPort → VM TCP remoteHost:remotePort.
     /// Uses the VM's NAT IP directly — same path as SSH, no vsock needed.
     func addTCPBridge(localPort: UInt16, remoteHost: String, remotePort: UInt16) throws {
-        guard bridgeServers[localPort] == nil else { return }
+        // Promote reservation → active bridge (or guard against double-add).
+        portLock.lock()
+        reservedPorts.remove(localPort)
+        guard bridgeServers[localPort] == nil else { portLock.unlock(); return }
+        portLock.unlock()
 
         let serverFd = try makeTCPServer(port: localPort)
+        portLock.lock()
         bridgeServers[localPort] = serverFd
+        portLock.unlock()
 
         let localPortCapture = localPort
         Task.detached { [weak self] in
@@ -190,9 +213,11 @@ final class VMManager: NSObject {
     }
 
     func removeBridge(localPort: UInt16) {
-        if let fd = bridgeServers.removeValue(forKey: localPort) {
-            Darwin.close(fd)
-        }
+        portLock.lock()
+        reservedPorts.remove(localPort)
+        let fd = bridgeServers.removeValue(forKey: localPort)
+        portLock.unlock()
+        if let fd { Darwin.close(fd) }
     }
 
     func stop() async {

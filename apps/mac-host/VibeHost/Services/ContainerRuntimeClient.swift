@@ -135,15 +135,15 @@ enum ContainerRuntimeClient {
         // Sandboxed apps can't bind privileged ports (< 1024), so map to 8000+.
         let base = max(preferred, 8000)
         let vmUsed = await vmUsedPorts()
-        // Also exclude ports already claimed by active TCP bridges — isHostPortAvailable()
-        // returns a false positive on macOS when SO_REUSEADDR is set and the existing
-        // listener is bound to 127.0.0.1 while we probe with INADDR_ANY.
-        let bridged = await VMManager.shared.activeBridgePorts
+        // claimPort() atomically checks bridge/reservation state and reserves the port,
+        // preventing races between concurrent project launches.
         for port in base..<(base + 100) {
-            if vmUsed.contains(port) || bridged.contains(port) { continue }
-            if isHostPortAvailable(port) { return port }
+            if vmUsed.contains(port) { continue }
+            if isHostPortAvailable(port) && VMManager.shared.claimPort(port) { return port }
         }
-        return ephemeralPort()
+        let p = ephemeralPort()
+        if p > 0 { _ = VMManager.shared.claimPort(p) }
+        return p
     }
 
     private static func vmUsedPorts() async -> Set<UInt16> {
