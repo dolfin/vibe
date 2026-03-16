@@ -30,9 +30,15 @@ struct ProjectDetailView: View {
         }
         .navigationTitle(project.appName)
         .sheet(isPresented: $showBrowser) {
-            if let port = runtime.hostPort(for: project),
-               let url = URL(string: "http://127.0.0.1:\(port)") {
-                AppBrowserView(url: url, appName: project.appName)
+            if let ep = runtime.vmEndpoint(for: project) {
+                AppBrowserView(
+                    appURL: runtime.isExposed(project)
+                        ? URL(string: "http://127.0.0.1:\(ep.hostPort)/")!
+                        : URL(string: "vibe-app://app/")!,
+                    schemeHandler: runtime.isExposed(project) ? nil
+                        : VibeSchemeHandler(vmIP: ep.vmIP, containerPort: ep.containerPort),
+                    appName: project.appName
+                )
             }
         }
     }
@@ -104,12 +110,6 @@ struct ProjectDetailView: View {
                 .frame(width: 10, height: 10)
             Text(statusLabel)
                 .font(.subheadline.weight(.medium))
-
-            if let port = runtime.hostPort(for: project), status == .running {
-                Text("port \(port)")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
         }
     }
 

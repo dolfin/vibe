@@ -12,6 +12,8 @@ actor ProjectLifecycleManager {
         var services: [ServiceRunState]
         /// Path inside the VM's virtio-fs share where app files are extracted.
         var vmProjectPath: String
+        /// NAT IP of the VM (set after start()).
+        var vmIP: String = ""
     }
 
     struct ServiceRunState {
@@ -170,20 +172,9 @@ actor ProjectLifecycleManager {
             _ = try await ContainerRuntimeClient.runContainer(spec)
         }
 
-        // Forward host TCP:hostPort → VM NAT IP:containerPort directly.
-        // The VM's NAT IP is already used for SSH — guaranteed reachable.
-        let vmIP = await VMManager.shared.vmIP ?? "127.0.0.1"
-        for svc in state.services where svc.containerPort > 0 {
-            do {
-                try await VMManager.shared.addTCPBridge(
-                    localPort: svc.hostPort,
-                    remoteHost: vmIP,
-                    remotePort: svc.containerPort
-                )
-            } catch {
-                logger.warning("Bridge failed for \(svc.name): \(error.localizedDescription)")
-            }
-        }
+        // Store the VM's NAT IP for scheme handler / future expose use.
+        // Bridges are NOT created at launch — the WKURLSchemeHandler proxies internally.
+        state.vmIP = await VMManager.shared.vmIP ?? "127.0.0.1"
 
         for i in state.services.indices {
             state.services[i].running = true
@@ -223,6 +214,33 @@ actor ProjectLifecycleManager {
         logger.info("Project stopped: \(state.projectId)")
 
         return state
+    }
+
+    /// Start a TCP bridge so the app is reachable at 127.0.0.1:hostPort.
+    func expose(projectId: UUID) async throws {
+        guard let state = states[projectId],
+              let svc = state.services.first(where: { $0.containerPort > 0 }) else { return }
+        try await VMManager.shared.addTCPBridge(
+            localPort: svc.hostPort,
+            remoteHost: state.vmIP,
+            remotePort: svc.containerPort
+        )
+        logger.info("Exposed \(state.projectId): 127.0.0.1:\(svc.hostPort) → \(state.vmIP):\(svc.containerPort)")
+    }
+
+    /// Remove the TCP bridge (if any).
+    func unexpose(projectId: UUID) async {
+        guard let state = states[projectId],
+              let svc = state.services.first(where: { $0.hostPort > 0 }) else { return }
+        await VMManager.shared.removeBridge(localPort: svc.hostPort)
+        logger.info("Unexposed \(state.projectId)")
+    }
+
+    /// Returns (vmIP, containerPort, hostPort) for the primary service after start().
+    func vmEndpoint(for projectId: UUID) -> (vmIP: String, containerPort: UInt16, hostPort: UInt16)? {
+        guard let state = states[projectId],
+              let svc = state.services.first(where: { $0.containerPort > 0 }) else { return nil }
+        return (vmIP: state.vmIP, containerPort: svc.containerPort, hostPort: svc.hostPort)
     }
 
     func hostPort(for projectId: UUID) -> UInt16? {

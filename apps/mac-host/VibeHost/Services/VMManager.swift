@@ -51,6 +51,9 @@ final class VMManager: NSObject {
     /// nonisolated(unsafe) applies to the actual stored property; all accesses
     /// are serialized by portLock.
     @ObservationIgnored nonisolated(unsafe) private var bridgeServers: [UInt16: Int32] = [:]
+    /// Established proxy client fds per bridge port. Shutdown on bridge removal to
+    /// immediately kill keep-alive connections, not just stop accepting new ones.
+    @ObservationIgnored nonisolated(unsafe) private var bridgeClientFds: [UInt16: [Int32]] = [:]
     /// Ports claimed by findAvailablePort but not yet promoted to a full bridge.
     @ObservationIgnored nonisolated(unsafe) private var reservedPorts: Set<UInt16> = []
     private let portLock = NSLock()
@@ -69,6 +72,12 @@ final class VMManager: NSObject {
     nonisolated func releasePort(_ port: UInt16) {
         portLock.lock()
         reservedPorts.remove(port)
+        portLock.unlock()
+    }
+
+    nonisolated func trackClientFd(_ fd: Int32, port: UInt16) {
+        portLock.lock()
+        bridgeClientFds[port, default: []].append(fd)
         portLock.unlock()
     }
 
@@ -157,6 +166,9 @@ final class VMManager: NSObject {
                 let clientFd = Darwin.accept(serverFd, nil, nil)
                 guard clientFd >= 0 else { break }
 
+                // Track this fd so removeBridge can shutdown established connections.
+                self?.trackClientFd(clientFd, port: localPortCapture)
+
                 Task.detached {
                     // Retry connectTCP for up to 30s — container app may still be starting.
                     var remoteFd: Int32?
@@ -185,14 +197,25 @@ final class VMManager: NSObject {
     func removeBridge(localPort: UInt16) {
         portLock.lock()
         reservedPorts.remove(localPort)
-        let fd = bridgeServers.removeValue(forKey: localPort)
+        let serverFd = bridgeServers.removeValue(forKey: localPort)
+        let clientFds = bridgeClientFds.removeValue(forKey: localPort) ?? []
         portLock.unlock()
-        if let fd { Darwin.close(fd) }
+
+        // Close the server socket — stops accepting new connections.
+        if let serverFd { Darwin.close(serverFd) }
+
+        // Shutdown established proxy connections so spliceData sees EOF immediately.
+        // We use shutdown (not close) so spliceData can still call close() on its side.
+        for clientFd in clientFds {
+            Darwin.shutdown(clientFd, SHUT_RDWR)
+        }
     }
 
     func stop() async {
         bridgeServers.values.forEach { Darwin.close($0) }
         bridgeServers.removeAll()
+        bridgeClientFds.values.flatMap { $0 }.forEach { Darwin.shutdown($0, SHUT_RDWR) }
+        bridgeClientFds.removeAll()
         socketDevice = nil
         try? FileManager.default.removeItem(at: readyFlagURL)
         state = .stopping
@@ -382,7 +405,10 @@ final class VMManager: NSObject {
     }
 
     func cleanupBridge(port: UInt16) {
+        portLock.lock()
         bridgeServers.removeValue(forKey: port)
+        bridgeClientFds.removeValue(forKey: port)
+        portLock.unlock()
     }
 
     // MARK: - TCP server helper

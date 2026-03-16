@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Per-document window: WebKit fills the window, auto-launches on open.
 /// An (i) toolbar button opens a sheet with all technical details.
@@ -9,6 +10,8 @@ struct DocumentWindowView: View {
     @State private var isWebLoading = true
     @State private var webError: String?
     @State private var currentURL: URL?
+    @State private var schemeHandler: VibeSchemeHandler?
+    @State private var webViewID = UUID()
 
     private var project: Project { document.project }
     private var status: ProjectRunStatus { runtime.status(for: project) }
@@ -26,11 +29,20 @@ struct DocumentWindowView: View {
                 }
             }
             .sheet(isPresented: $showInfo) {
-                ProjectInfoSheet(project: project, runtime: runtime)
+                ProjectInfoSheet(
+                    project: project,
+                    runtime: runtime,
+                    schemeHandler: $schemeHandler,
+                    webViewID: $webViewID
+                )
             }
             .task {
                 await runtime.checkRuntime()
                 await runtime.launchProject(project)
+                if let ep = runtime.vmEndpoint(for: project) {
+                    schemeHandler = VibeSchemeHandler(vmIP: ep.vmIP, containerPort: ep.containerPort)
+                    webViewID = UUID()
+                }
             }
             .onDisappear {
                 let p = project; let rt = runtime
@@ -43,15 +55,36 @@ struct DocumentWindowView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let port = runtime.hostPort(for: project),
+        if runtime.isExposed(project), let port = runtime.exposedPort(for: project),
            let appURL = URL(string: "http://127.0.0.1:\(port)") {
             ZStack {
                 WebView(
                     url: appURL,
+                    schemeHandler: nil,
                     isLoading: $isWebLoading,
                     loadError: $webError,
                     currentURL: $currentURL
                 )
+                .id(webViewID)
+                if isWebLoading && webError == nil {
+                    ProgressView("Connecting to \(project.appName)…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.background.opacity(0.92))
+                }
+                if let error = webError {
+                    webErrorOverlay(error)
+                }
+            }
+        } else if let handler = schemeHandler {
+            ZStack {
+                WebView(
+                    url: URL(string: "vibe-app://app/")!,
+                    schemeHandler: handler,
+                    isLoading: $isWebLoading,
+                    loadError: $webError,
+                    currentURL: $currentURL
+                )
+                .id(webViewID)
                 if isWebLoading && webError == nil {
                     ProgressView("Connecting to \(project.appName)…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -162,6 +195,8 @@ struct DocumentWindowView: View {
 private struct ProjectInfoSheet: View {
     let project: Project
     let runtime: RuntimeState
+    @Binding var schemeHandler: VibeSchemeHandler?
+    @Binding var webViewID: UUID
     @Environment(\.dismiss) private var dismiss
 
     private var status: ProjectRunStatus { runtime.status(for: project) }
@@ -199,16 +234,6 @@ private struct ProjectInfoSheet: View {
                                 .frame(width: 10, height: 10)
                             Text(statusLabel)
                                 .font(.subheadline.weight(.medium))
-                            Spacer()
-                            if status == .running {
-                                Button("Stop", role: .destructive) {
-                                    dismiss()
-                                    let p = project; let rt = runtime
-                                    Task { await rt.stopProject(p) }
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
                         }
                         .padding(.vertical, 4)
 
@@ -220,6 +245,47 @@ private struct ProjectInfoSheet: View {
                                     .foregroundStyle(.secondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        if status == .running {
+                            Divider()
+
+                            Toggle("Expose to machine", isOn: Binding(
+                                get: { runtime.isExposed(project) },
+                                set: { exposed in
+                                    Task {
+                                        if exposed {
+                                            await runtime.exposeProject(project)
+                                            schemeHandler = nil
+                                        } else {
+                                            await runtime.unexposeProject(project)
+                                            if let ep = runtime.vmEndpoint(for: project) {
+                                                schemeHandler = VibeSchemeHandler(
+                                                    vmIP: ep.vmIP,
+                                                    containerPort: ep.containerPort
+                                                )
+                                            }
+                                        }
+                                        webViewID = UUID()
+                                    }
+                                }
+                            ))
+                            .padding(.top, 4)
+
+                            if runtime.isExposed(project), let port = runtime.exposedPort(for: project) {
+                                HStack {
+                                    Text(verbatim: "http://127.0.0.1:\(port)")
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Button("Copy") {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString("http://127.0.0.1:\(port)", forType: .string)
+                                    }
+                                    .controlSize(.small)
+                                }
+                                .padding(.top, 2)
+                            }
                         }
                     }
 

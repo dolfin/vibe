@@ -13,8 +13,11 @@ final class RuntimeState {
     /// Map of project UUID → running status.
     var statuses: [UUID: ProjectRunStatus] = [:]
 
-    /// Map of project UUID → primary host port.
+    /// Map of project UUID → primary host port (only set when the project is exposed).
     var hostPorts: [UUID: UInt16] = [:]
+
+    /// Map of project UUID → VM endpoint (vmIP, containerPort, hostPort). Set after start().
+    var vmEndpoints: [UUID: (vmIP: String, containerPort: UInt16, hostPort: UInt16)] = [:]
 
     /// Map of project UUID → in-progress status message (e.g. "Pulling images…").
     var statusMessages: [UUID: String] = [:]
@@ -48,13 +51,13 @@ final class RuntimeState {
             _ = try await mgr.prepare(project: project)
 
             statusMessages[project.id] = "Pulling images — first run may take a few minutes…"
-            let state = try await mgr.start(projectId: project.id)
+            _ = try await mgr.start(projectId: project.id)
             statusMessages[project.id] = nil
             statuses[project.id] = .running
 
-            if let port = state.services.first(where: { $0.hostPort > 0 })?.hostPort {
-                hostPorts[project.id] = port
-                logger.info("Primary service on host port \(port)")
+            if let ep = await mgr.vmEndpoint(for: project.id) {
+                vmEndpoints[project.id] = ep
+                logger.info("VM endpoint: \(ep.vmIP):\(ep.containerPort) (host port \(ep.hostPort) reserved)")
             }
         } catch {
             logger.error("Launch failed: \(String(describing: error))")
@@ -68,15 +71,51 @@ final class RuntimeState {
     func stopProject(_ project: Project) async {
         statuses[project.id] = .stopping
 
+        // Tear down the TCP bridge before stopping containers.
+        await unexposeProject(project)
+
         do {
             _ = try await lifecycle(for: project).stop(projectId: project.id)
             statuses[project.id] = .stopped
             hostPorts[project.id] = nil
+            vmEndpoints[project.id] = nil
             lifecycles[project.id] = nil
         } catch {
             statuses[project.id] = .error
             lastError = String(describing: error)
         }
+    }
+
+    /// Create a TCP bridge so the app is accessible at 127.0.0.1:hostPort.
+    func exposeProject(_ project: Project) async {
+        let mgr = lifecycle(for: project)
+        do {
+            try await mgr.expose(projectId: project.id)
+            if let ep = await mgr.vmEndpoint(for: project.id) {
+                hostPorts[project.id] = ep.hostPort
+            }
+        } catch {
+            logger.error("Expose failed: \(String(describing: error))")
+            lastError = String(describing: error)
+        }
+    }
+
+    /// Remove the TCP bridge.
+    func unexposeProject(_ project: Project) async {
+        await lifecycle(for: project).unexpose(projectId: project.id)
+        hostPorts[project.id] = nil
+    }
+
+    func isExposed(_ project: Project) -> Bool {
+        hostPorts[project.id] != nil
+    }
+
+    func exposedPort(for project: Project) -> UInt16? {
+        hostPorts[project.id]
+    }
+
+    func vmEndpoint(for project: Project) -> (vmIP: String, containerPort: UInt16, hostPort: UInt16)? {
+        vmEndpoints[project.id]
     }
 
     func status(for project: Project) -> ProjectRunStatus {

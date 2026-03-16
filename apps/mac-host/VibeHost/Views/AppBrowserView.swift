@@ -3,7 +3,8 @@ import WebKit
 
 /// WebKit browser view that displays a running Vibe application.
 struct AppBrowserView: View {
-    let url: URL
+    let appURL: URL
+    var schemeHandler: VibeSchemeHandler? = nil
     let appName: String
     @Environment(\.dismiss) private var dismiss
 
@@ -20,7 +21,7 @@ struct AppBrowserView: View {
                 errorState(error)
             } else {
                 ZStack {
-                    WebView(url: url, isLoading: $isLoading, loadError: $loadError, currentURL: $currentURL)
+                    WebView(url: appURL, schemeHandler: schemeHandler, isLoading: $isLoading, loadError: $loadError, currentURL: $currentURL)
 
                     if isLoading {
                         ProgressView("Connecting to \(appName)...")
@@ -93,6 +94,7 @@ struct AppBrowserView: View {
 /// NSViewRepresentable wrapping WKWebView.
 struct WebView: NSViewRepresentable {
     let url: URL
+    var schemeHandler: VibeSchemeHandler? = nil
     @Binding var isLoading: Bool
     @Binding var loadError: String?
     @Binding var currentURL: URL?
@@ -100,6 +102,9 @@ struct WebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        if let handler = schemeHandler {
+            config.setURLSchemeHandler(handler, forURLScheme: "vibe-app")
+        }
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
