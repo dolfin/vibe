@@ -8,6 +8,7 @@
 .build/
 .swiftpm/
 *.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
 DerivedData/
 
 # Proto generated
