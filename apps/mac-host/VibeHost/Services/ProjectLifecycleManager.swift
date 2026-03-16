@@ -130,10 +130,9 @@ actor ProjectLifecycleManager {
             }
         }
 
-        // Create network inside VM
-        try await ContainerRuntimeClient.createNetwork(state.networkName)
-
-        // Start containers
+        // Start containers using host networking — CNI bridge is not available in
+        // linux-virt kernel. Containers share the VM's network namespace directly,
+        // so containerPort IS the VM port. The vsock bridge then maps host→VM.
         for svc in state.services {
             do {
                 try await ContainerRuntimeClient.pullImage(svc.image)
@@ -141,23 +140,18 @@ actor ProjectLifecycleManager {
                 logger.warning("Failed to pull \(svc.image), trying local: \(error.localizedDescription)")
             }
 
-            var ports: [DockerPortMapping] = []
-            if svc.containerPort > 0 {
-                ports.append(DockerPortMapping(host: svc.containerPort, container: svc.containerPort))
-            }
-
             let spec = ContainerSpec(
                 name: svc.containerName,
                 image: svc.image,
                 command: svc.command,
                 env: ["VIBE_PROJECT_ID": state.projectId],
-                ports: ports,
+                ports: [],        // not needed with --network host
                 volumes: [DockerVolumeMount(
                     hostPath: state.vmProjectPath,
                     containerPath: "/app"
                 )],
                 workingDir: "/app",
-                network: state.networkName,
+                network: "host",  // bypass CNI; container port = VM port
                 labels: [
                     "vibe.project": state.projectId,
                     "vibe.service": svc.name
@@ -208,8 +202,6 @@ actor ProjectLifecycleManager {
             try? await ContainerRuntimeClient.stopContainer(name: svc.containerName, timeout: timeout)
             try? await ContainerRuntimeClient.removeContainer(name: svc.containerName)
         }
-
-        try? await ContainerRuntimeClient.removeNetwork(state.networkName)
 
         for i in state.services.indices {
             state.services[i].running = false
