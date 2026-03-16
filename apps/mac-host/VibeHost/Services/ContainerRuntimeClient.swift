@@ -53,18 +53,45 @@ enum ContainerRuntimeClient {
 
     // MARK: - Images
 
+    // Serializes all nerdctl pulls — containerd's internal snapshot locking causes
+    // concurrent pulls to queue inside containerd, easily exceeding our SSH timeout.
+    // One pull at a time; same-image requests share the in-flight Task.
+    private nonisolated(unsafe) static var activePullTasks: [String: Task<Void, Error>] = [:]
+    private nonisolated(unsafe) static var pullQueue: Task<Void, Never> = Task {}
+    private static let pullLock = NSLock()
+
     static func pullImage(_ image: String) async throws {
-        // Skip pull if image already exists locally — avoids hanging registry check
+        // Skip pull if image already exists locally — avoids a registry round-trip.
         let (_, _, inspectStatus) = try await ssh(["nerdctl", "image", "inspect", image])
         if inspectStatus == 0 {
             logger.info("Image \(image) already present — skipping pull")
             return
         }
-        logger.info("Pulling image: \(image)")
-        let (_, stderr, status) = try await ssh(["nerdctl", "pull", image], timeout: 300)
-        if status != 0 {
-            throw DockerError.commandFailed("nerdctl pull \(image): \(stderr)")
+
+        // Serialize: one pull at a time. Same-image requests share the in-flight Task.
+        // withLock is the Swift-6-safe scoped form (no lock/unlock across suspensions).
+        let task: Task<Void, Error> = pullLock.withLock {
+            if let existing = activePullTasks[image] {
+                return existing  // piggyback on in-flight pull for same image
+            }
+            let prev = pullQueue
+            let t = Task<Void, Error> {
+                await prev.value   // wait for any prior pull to finish
+                defer {
+                    pullLock.withLock { activePullTasks.removeValue(forKey: image) }
+                }
+                logger.info("Pulling image: \(image)")
+                let (_, stderr, status) = try await ssh(["nerdctl", "pull", image], timeout: 300)
+                if status != 0 {
+                    throw DockerError.commandFailed("nerdctl pull \(image): \(stderr)")
+                }
+            }
+            activePullTasks[image] = t
+            // pullQueue is Task<Void, Never> — swallow errors so the chain never breaks.
+            pullQueue = Task { _ = try? await t.value }
+            return t
         }
+        try await task.value
     }
 
     // MARK: - Containers
