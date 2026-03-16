@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import Darwin
 
 extension UTType {
     static let vibeApp = UTType("ninja.gil.vibe.vibeapp")!
@@ -13,6 +14,10 @@ struct VibeHostApp: App {
     @State private var pendingPackageURL: URL?
 
     init() {
+        // Ignore SIGPIPE so write() to a closed socket returns EPIPE instead of
+        // crashing the process. Required when forcibly shutting down TCP proxy
+        // connections (e.g. on bridge removal) while spliceData is still writing.
+        signal(SIGPIPE, SIG_IGN)
         // Start the VM immediately so it's warm before any document opens.
         Task { try? await VMManager.shared.ensureReady() }
     }
