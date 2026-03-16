@@ -35,9 +35,7 @@ enum PackageExtractor {
 
     /// Extract a .vibeapp from raw data.
     static func extract(data: Data) throws -> VibePackage {
-        guard let archive = Archive(data: data, accessMode: .read) else {
-            throw ExtractionError.missingPackageManifest
-        }
+        let archive = try Archive(data: data, accessMode: .read, pathEncoding: nil)
 
         // Extract _vibe_package_manifest.json
         guard let pkgManifestEntry = archive["_vibe_package_manifest.json"] else {
@@ -92,9 +90,7 @@ enum PackageExtractor {
         let fm = FileManager.default
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        guard let archive = Archive(data: data, accessMode: .read) else {
-            throw ExtractionError.missingPackageManifest
-        }
+        let archive = try Archive(data: data, accessMode: .read, pathEncoding: nil)
 
         for entry in archive {
             let name = entry.path
@@ -119,7 +115,7 @@ enum PackageExtractor {
 
     /// Extract a specific file's data from a .vibeapp archive.
     static func extractFile(named name: String, from data: Data) throws -> Data? {
-        guard let archive = Archive(data: data, accessMode: .read) else {
+        guard let archive = try? Archive(data: data, accessMode: .read, pathEncoding: nil) else {
             return nil
         }
         guard let entry = archive[name] else {

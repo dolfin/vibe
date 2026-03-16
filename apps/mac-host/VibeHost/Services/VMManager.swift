@@ -47,10 +47,12 @@ final class VMManager: NSObject {
     private var consoleLogFH: FileHandle?
     private var consolePipe: Pipe?
     /// TCP server fds keyed by local port (kept alive to accept new connections).
-    /// nonisolated(unsafe): all accesses are serialized by portLock.
-    nonisolated(unsafe) private var bridgeServers: [UInt16: Int32] = [:]
+    /// @ObservationIgnored + nonisolated(unsafe): bypasses @Observable macro so
+    /// nonisolated(unsafe) applies to the actual stored property; all accesses
+    /// are serialized by portLock.
+    @ObservationIgnored nonisolated(unsafe) private var bridgeServers: [UInt16: Int32] = [:]
     /// Ports claimed by findAvailablePort but not yet promoted to a full bridge.
-    nonisolated(unsafe) private var reservedPorts: Set<UInt16> = []
+    @ObservationIgnored nonisolated(unsafe) private var reservedPorts: Set<UInt16> = []
     private let portLock = NSLock()
 
     /// Atomically check-and-reserve a port. Returns true if the port was free and

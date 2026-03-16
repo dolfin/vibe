@@ -159,14 +159,17 @@ enum ContainerRuntimeClient {
         // Sandboxed apps can't bind privileged ports (< 1024), so map to 8000+.
         let base = max(preferred, 8000)
         let vmUsed = await vmUsedPorts()
+        // Capture the VMManager reference on the main actor once; claimPort() is
+        // nonisolated so it can be called directly without further actor hops.
+        let vm = await MainActor.run { VMManager.shared }
         // claimPort() atomically checks bridge/reservation state and reserves the port,
         // preventing races between concurrent project launches.
         for port in base..<(base + 100) {
             if vmUsed.contains(port) { continue }
-            if isHostPortAvailable(port) && VMManager.shared.claimPort(port) { return port }
+            if isHostPortAvailable(port) && vm.claimPort(port) { return port }
         }
         let p = ephemeralPort()
-        if p > 0 { _ = VMManager.shared.claimPort(p) }
+        if p > 0 { _ = vm.claimPort(p) }
         return p
     }
 
@@ -271,7 +274,7 @@ enum ContainerRuntimeClient {
         guard bindResult == 0 else { return 0 }
         var bound = sockaddr_in()
         var len = socklen_t(MemoryLayout<sockaddr_in>.size)
-        withUnsafeMutablePointer(to: &bound) { ptr in
+        _ = withUnsafeMutablePointer(to: &bound) { ptr in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
                 getsockname(sock, sockPtr, &len)
             }
