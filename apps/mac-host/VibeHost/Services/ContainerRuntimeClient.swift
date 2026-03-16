@@ -3,15 +3,13 @@ import os
 
 private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "Container")
 
-// MARK: - Shared types (previously in DockerClient.swift)
+// MARK: - Types
 
 enum DockerError: LocalizedError {
-    case notFound
     case commandFailed(String)
 
     var errorDescription: String? {
         switch self {
-        case .notFound: "Vibe Runtime not available — is the VM running?"
         case .commandFailed(let msg): "Container error: \(msg)"
         }
     }
@@ -106,10 +104,9 @@ enum ContainerRuntimeClient {
         let cmd = nerdctlArgs.joined(separator: " ")
         let shellCmd = "\(cmd) >\(cidFile) 2>\(errFile) </dev/null & BGPID=$!; wait $BGPID; STATUS=$?; [ $STATUS -eq 0 ] && cat \(cidFile) || (cat \(errFile) >&2; exit $STATUS)"
 
-        // Pass shellCmd directly — sshd already wraps it in `sh -c`.
-        // Using ssh(["sh", "-c", shellCmd]) creates a double-shell: sshd runs
-        // `/bin/sh -c "sh -c nerdctl run ..."` which treats "nerdctl" as the
-        // command-string for the inner sh -c and "run" as $0 → no args → help text.
+        // Pass shellCmd as a single arg — sshd wraps it in `sh -c` automatically.
+        // Do NOT use ssh(["sh", "-c", shellCmd]): that creates a double sh -c invocation
+        // where nerdctl receives no arguments and prints help.
         logger.info("Starting container: \(spec.name)")
         let (stdout, stderr, status) = try await ssh([shellCmd])
         if status != 0 {
@@ -130,40 +127,6 @@ enum ContainerRuntimeClient {
         if status != 0 && !stderr.contains("No such container") {
             throw DockerError.commandFailed("nerdctl rm \(name): \(stderr)")
         }
-    }
-
-    static func isRunning(name: String) async -> Bool {
-        guard let (stdout, _, status) = try? await ssh([
-            "nerdctl", "inspect", "--format", "{{.State.Running}}", name
-        ]) else { return false }
-        return status == 0 && stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
-    }
-
-    // MARK: - VM-side vsock bridges
-
-    /// Start a socat listener inside the VM that bridges vsock port → TCP port.
-    /// Required for host↔VM port forwarding: host connects to vsock:PORT,
-    /// VM socat forwards to TCP:localhost:PORT where the container listens.
-    static func startPortBridge(containerPort: UInt16) async throws {
-        let cmd = "socat VSOCK-LISTEN:\(containerPort),reuseaddr,fork TCP:localhost:\(containerPort) </dev/null >/dev/null 2>&1 & echo $!"
-        let (stdout, _, status) = try await ssh(["sh", "-c", cmd])
-        if status != 0 {
-            throw DockerError.commandFailed("vsock bridge for port \(containerPort) failed")
-        }
-        logger.info("VM vsock bridge started: vsock:\(containerPort) → TCP:\(containerPort) (pid=\(stdout.trimmingCharacters(in: .whitespacesAndNewlines)))")
-    }
-
-    // MARK: - Networks
-
-    static func createNetwork(_ name: String) async throws {
-        let (_, stderr, status) = try await ssh(["nerdctl", "network", "create", name])
-        if status != 0 && !stderr.contains("already exists") {
-            throw DockerError.commandFailed("nerdctl network create \(name): \(stderr)")
-        }
-    }
-
-    static func removeNetwork(_ name: String) async throws {
-        _ = try? await ssh(["nerdctl", "network", "rm", name])
     }
 
     // MARK: - Port resolution
@@ -205,7 +168,6 @@ enum ContainerRuntimeClient {
     static func ssh(_ args: [String], timeout: TimeInterval = 60) async throws -> (stdout: String, stderr: String, status: Int32) {
         let keyPath = vibeSSHPrivateKeyPath()
         let vmHost = await VMManager.shared.vmIP ?? "127.0.0.1"
-        logger.info("SSH → \(vmSSHUser)@\(vmHost):22 key exists=\(FileManager.default.fileExists(atPath: keyPath))")
 
         // Copy private key to NSTemporaryDirectory — App Sandbox may block child processes
         // (like /usr/bin/ssh) from reading files inside the container directory.
@@ -215,7 +177,6 @@ enum ContainerRuntimeClient {
         do {
             try fm.copyItem(atPath: keyPath, toPath: tmpKey.path)
             try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmpKey.path)
-            logger.info("Copied key to tmp: \(tmpKey.path) exists=\(fm.fileExists(atPath: tmpKey.path))")
         } catch {
             logger.error("Key copy to tmp FAILED: \(error) — using original path")
         }
@@ -223,7 +184,6 @@ enum ContainerRuntimeClient {
 
         let effectiveKeyPath = fm.fileExists(atPath: tmpKey.path) ? tmpKey.path : keyPath
         let sshArgs = [
-            "-vvv",
             "-p", "22",
             "-i", effectiveKeyPath,
             "-o", "StrictHostKeyChecking=no",
@@ -235,23 +195,6 @@ enum ContainerRuntimeClient {
         var lastResult: (stdout: String, stderr: String, status: Int32) = ("", "", -1)
         for attempt in 1...5 {
             lastResult = try await runProcess("/usr/bin/ssh", args: sshArgs, timeout: timeout)
-            // Log verbose SSH output to help diagnose auth failures
-            if !lastResult.stderr.isEmpty {
-                logger.info("SSH attempt \(attempt) stderr: \(lastResult.stderr)")
-            }
-            // On auth failure, dump sshd-side debug log from the shared dir
-            if lastResult.stderr.contains("Permission denied") {
-                let sshdLog = await VMManager.shared.sharedDir.appendingPathComponent("sshd-debug.log")
-                if let logData = try? Data(contentsOf: sshdLog),
-                   let logText = String(data: logData, encoding: .utf8) {
-                    // Show last 60 lines to avoid spamming
-                    let lines = logText.components(separatedBy: .newlines).filter { !$0.isEmpty }
-                    let tail = lines.suffix(60).joined(separator: "\n")
-                    logger.info("sshd-debug.log (last 60 lines):\n\(tail)")
-                } else {
-                    logger.warning("sshd-debug.log not readable or absent")
-                }
-            }
             // Exit code 255 = SSH transport error (connection reset, refused, etc.)
             if lastResult.status != 255 { return lastResult }
             let isConnErr = lastResult.stderr.contains("Connection reset")

@@ -10,7 +10,6 @@ actor ProjectLifecycleManager {
         let projectId: String
         var status: RunStatus
         var services: [ServiceRunState]
-        var networkName: String
         /// Path inside the VM's virtio-fs share where app files are extracted.
         var vmProjectPath: String
     }
@@ -46,7 +45,6 @@ actor ProjectLifecycleManager {
     /// Prepare a project — extract files to VM shared dir, resolve ports.
     func prepare(project: Project) async throws -> ManagedState {
         let projectTag = UUID().uuidString.prefix(8).lowercased()
-        let networkName = "vibe-net-\(projectTag)"
 
         // Ensure VM is ready before doing anything
         try await VMManager.shared.ensureReady()
@@ -103,7 +101,6 @@ actor ProjectLifecycleManager {
             projectId: "vibe-\(projectTag)",
             status: .stopped,
             services: services,
-            networkName: networkName,
             vmProjectPath: vmProjectPath
         )
 
@@ -132,7 +129,7 @@ actor ProjectLifecycleManager {
 
         // Start containers using host networking — CNI bridge is not available in
         // linux-virt kernel. Containers share the VM's network namespace directly,
-        // so containerPort IS the VM port. The vsock bridge then maps host→VM.
+        // so containerPort IS the VM port, reachable via the VM's NAT IP.
         for svc in state.services {
             do {
                 try await ContainerRuntimeClient.pullImage(svc.image)
@@ -195,7 +192,7 @@ actor ProjectLifecycleManager {
         state.status = .stopping
         states[projectId] = state
 
-        // Remove SSH port tunnels
+        // Remove TCP port bridges
         for svc in state.services where svc.hostPort > 0 {
             await VMManager.shared.removeBridge(localPort: svc.hostPort)
         }

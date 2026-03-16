@@ -147,41 +147,6 @@ final class VMManager: NSObject {
         state = .idle
     }
 
-    /// Start a vsock→TCP bridge so SSH (and container ports) work.
-    /// localPort is on 127.0.0.1, vsockPort is inside the VM.
-    func addBridge(localPort: UInt16, vsockPort: UInt32) throws {
-        guard bridgeServers[localPort] == nil else { return }
-        guard let socketDevice else {
-            throw VMError.bootFailed("VM not running (no vsock device)")
-        }
-
-        let serverFd = try makeTCPServer(port: localPort)
-        bridgeServers[localPort] = serverFd
-
-        let localPortCapture = localPort
-        Task.detached { [weak self, weak socketDevice] in
-            guard let socketDevice else { return }
-            while true {
-                let clientFd = Darwin.accept(serverFd, nil, nil)
-                guard clientFd >= 0 else { break }
-
-                Task { @MainActor in
-                    do {
-                        let vsockConn = try await socketDevice.connect(toPort: vsockPort)
-                        let fd = vsockConn.fileDescriptor
-                        Task.detached { [keepAlive = vsockConn] in
-                            spliceData(a: clientFd, b: fd, keepAlive: keepAlive)
-                        }
-                    } catch {
-                        Darwin.close(clientFd)
-                    }
-                }
-            }
-            await self?.cleanupBridge(port: localPortCapture)
-        }
-        logger.info("TCP bridge: 127.0.0.1:\(localPort) ↔ vsock:\(vsockPort)")
-    }
-
     /// Forward host TCP:localPort → VM TCP remoteHost:remotePort.
     /// Uses the VM's NAT IP directly — same path as SSH, no vsock needed.
     func addTCPBridge(localPort: UInt16, remoteHost: String, remotePort: UInt16) throws {
@@ -206,7 +171,7 @@ final class VMManager: NSObject {
                             break
                         }
                         logger.debug("TCP proxy: attempt \(attempt) ECONNREFUSED for \(remoteHost):\(remotePort), retrying…")
-                        Thread.sleep(forTimeInterval: 1.0)
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
                     }
                     guard let remoteFd else {
                         logger.warning("TCP proxy: gave up connecting to \(remoteHost):\(remotePort)")
