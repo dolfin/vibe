@@ -77,7 +77,7 @@ enum ContainerRuntimeClient {
             }
             let t = Task<Void, Error> {
                 defer {
-                    pullLock.withLock { activePullTasks.removeValue(forKey: image) }
+                    _ = pullLock.withLock { activePullTasks.removeValue(forKey: image) }
                 }
                 logger.info("Pulling image: \(image)")
                 let (_, stderr, status) = try await ssh(["nerdctl", "pull", image], timeout: 600)
