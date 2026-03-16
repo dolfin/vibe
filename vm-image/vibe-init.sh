@@ -212,6 +212,17 @@ else
 fi
 stage "sshd"
 
+# ── Kernel modules for CNI networking ────────────────────────────────────────
+log "Loading networking kernel modules..."
+for mod in bridge br_netfilter xt_MASQUERADE xt_nat ip_tables iptable_nat iptable_filter; do
+    modprobe "$mod" 2>/dev/null && log "  loaded: $mod" || log "  skip (not available): $mod"
+done
+# Enable IP forwarding and bridge-netfilter so iptables can see bridge traffic
+echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
+echo 1 > /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || true
+echo 1 > /proc/sys/net/bridge/bridge-nf-call-ip6tables 2>/dev/null || true
+log "Networking modules loaded."
+
 # ── containerd ───────────────────────────────────────────────────────────────
 log "Starting containerd..."
 mkdir -p /etc/containerd /run/containerd
