@@ -74,31 +74,44 @@ enum ContainerRuntimeClient {
     static func runContainer(_ spec: ContainerSpec) async throws -> String {
         try? await removeContainer(name: spec.name)
 
-        var args = ["nerdctl", "run", "-d", "--name", spec.name]
+        var nerdctlArgs = ["nerdctl", "run", "-d", "--name", spec.name]
 
         for pm in spec.ports {
-            args += ["-p", "127.0.0.1:\(pm.host):\(pm.container)"]
+            nerdctlArgs += ["-p", "127.0.0.1:\(pm.host):\(pm.container)"]
         }
         for (k, v) in spec.env {
-            args += ["-e", "\(k)=\(v)"]
+            nerdctlArgs += ["-e", "\(k)=\(v)"]
         }
         for vol in spec.volumes {
-            args += ["-v", "\(vol.hostPath):\(vol.containerPath)"]
+            nerdctlArgs += ["-v", "\(vol.hostPath):\(vol.containerPath)"]
         }
         if let wd = spec.workingDir {
-            args += ["-w", wd]
+            nerdctlArgs += ["-w", wd]
         }
         if let net = spec.network {
-            args += ["--network", net]
+            nerdctlArgs += ["--network", net]
         }
         for (k, v) in spec.labels {
-            args += ["--label", "\(k)=\(v)"]
+            nerdctlArgs += ["--label", "\(k)=\(v)"]
         }
-        args.append(spec.image)
-        args += spec.command
+        nerdctlArgs.append(spec.image)
+        nerdctlArgs += spec.command
 
+        // nerdctl run -d spawns a background _NERDCTL_INTERNAL_LOGGING daemon that
+        // inherits the SSH session's file descriptors, keeping the channel open
+        // indefinitely. Fix: background nerdctl with all I/O redirected to a temp
+        // file, wait for nerdctl itself to exit (not the daemon), then read the CID.
+        let cidFile = "/tmp/.vibe-cid-\(spec.name)"
+        let errFile = "/tmp/.vibe-err-\(spec.name)"
+        let cmd = nerdctlArgs.joined(separator: " ")
+        let shellCmd = "\(cmd) >\(cidFile) 2>\(errFile) </dev/null & BGPID=$!; wait $BGPID; STATUS=$?; [ $STATUS -eq 0 ] && cat \(cidFile) || (cat \(errFile) >&2; exit $STATUS)"
+
+        // Pass shellCmd directly — sshd already wraps it in `sh -c`.
+        // Using ssh(["sh", "-c", shellCmd]) creates a double-shell: sshd runs
+        // `/bin/sh -c "sh -c nerdctl run ..."` which treats "nerdctl" as the
+        // command-string for the inner sh -c and "run" as $0 → no args → help text.
         logger.info("Starting container: \(spec.name)")
-        let (stdout, stderr, status) = try await ssh(args)
+        let (stdout, stderr, status) = try await ssh([shellCmd])
         if status != 0 {
             throw DockerError.commandFailed("nerdctl run \(spec.name): \(stderr)")
         }
@@ -126,6 +139,20 @@ enum ContainerRuntimeClient {
         return status == 0 && stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
     }
 
+    // MARK: - VM-side vsock bridges
+
+    /// Start a socat listener inside the VM that bridges vsock port → TCP port.
+    /// Required for host↔VM port forwarding: host connects to vsock:PORT,
+    /// VM socat forwards to TCP:localhost:PORT where the container listens.
+    static func startPortBridge(containerPort: UInt16) async throws {
+        let cmd = "socat VSOCK-LISTEN:\(containerPort),reuseaddr,fork TCP:localhost:\(containerPort) </dev/null >/dev/null 2>&1 & echo $!"
+        let (stdout, _, status) = try await ssh(["sh", "-c", cmd])
+        if status != 0 {
+            throw DockerError.commandFailed("vsock bridge for port \(containerPort) failed")
+        }
+        logger.info("VM vsock bridge started: vsock:\(containerPort) → TCP:\(containerPort) (pid=\(stdout.trimmingCharacters(in: .whitespacesAndNewlines)))")
+    }
+
     // MARK: - Networks
 
     static func createNetwork(_ name: String) async throws {
@@ -142,8 +169,10 @@ enum ContainerRuntimeClient {
     // MARK: - Port resolution
 
     static func findAvailablePort(preferred: UInt16) async -> UInt16 {
+        // Sandboxed apps can't bind privileged ports (< 1024), so map to 8000+.
+        let base = max(preferred, 8000)
         let used = await vmUsedPorts()
-        for port in preferred..<(preferred + 100) {
+        for port in base..<(base + 100) {
             if used.contains(port) { continue }
             if isHostPortAvailable(port) { return port }
         }

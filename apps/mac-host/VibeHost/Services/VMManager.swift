@@ -182,6 +182,45 @@ final class VMManager: NSObject {
         logger.info("TCP bridge: 127.0.0.1:\(localPort) ↔ vsock:\(vsockPort)")
     }
 
+    /// Forward host TCP:localPort → VM TCP remoteHost:remotePort.
+    /// Uses the VM's NAT IP directly — same path as SSH, no vsock needed.
+    func addTCPBridge(localPort: UInt16, remoteHost: String, remotePort: UInt16) throws {
+        guard bridgeServers[localPort] == nil else { return }
+
+        let serverFd = try makeTCPServer(port: localPort)
+        bridgeServers[localPort] = serverFd
+
+        let localPortCapture = localPort
+        Task.detached { [weak self] in
+            while true {
+                let clientFd = Darwin.accept(serverFd, nil, nil)
+                guard clientFd >= 0 else { break }
+
+                Task.detached {
+                    // Retry connectTCP for up to 30s — container app may still be starting.
+                    var remoteFd: Int32?
+                    for attempt in 1...30 {
+                        remoteFd = connectTCP(host: remoteHost, port: remotePort)
+                        if remoteFd != nil {
+                            logger.info("TCP proxy: connected to \(remoteHost):\(remotePort) on attempt \(attempt)")
+                            break
+                        }
+                        logger.debug("TCP proxy: attempt \(attempt) ECONNREFUSED for \(remoteHost):\(remotePort), retrying…")
+                        Thread.sleep(forTimeInterval: 1.0)
+                    }
+                    guard let remoteFd else {
+                        logger.warning("TCP proxy: gave up connecting to \(remoteHost):\(remotePort)")
+                        Darwin.close(clientFd)
+                        return
+                    }
+                    spliceData(a: clientFd, b: remoteFd, keepAlive: NSObject())
+                }
+            }
+            await self?.cleanupBridge(port: localPortCapture)
+        }
+        logger.info("TCP bridge: 127.0.0.1:\(localPort) → \(remoteHost):\(remotePort)")
+    }
+
     func removeBridge(localPort: UInt16) {
         if let fd = bridgeServers.removeValue(forKey: localPort) {
             Darwin.close(fd)
@@ -473,10 +512,46 @@ enum VMError: LocalizedError {
     }
 }
 
+// MARK: - TCP connect helper (free function — no actor isolation)
+
+/// Open a TCP connection to host:port. Returns the connected fd, or nil on failure.
+func connectTCP(host: String, port: UInt16) -> Int32? {
+    var hints = addrinfo()
+    hints.ai_family = AF_INET
+    hints.ai_socktype = SOCK_STREAM
+    var res: UnsafeMutablePointer<addrinfo>?
+    guard getaddrinfo(host, "\(port)", &hints, &res) == 0, let res else { return nil }
+    defer { freeaddrinfo(res) }
+    let fd = Darwin.socket(res.pointee.ai_family, res.pointee.ai_socktype, res.pointee.ai_protocol)
+    guard fd >= 0 else { return nil }
+    guard Darwin.connect(fd, res.pointee.ai_addr, res.pointee.ai_addrlen) == 0 else {
+        Darwin.close(fd)
+        return nil
+    }
+    return fd
+}
+
 // MARK: - Bidirectional splice (free function — no actor isolation)
 
-/// Forward data between two file descriptors until either side closes.
+/// Forward data between two file descriptors until both sides close.
+/// Uses half-close (shutdown SHUT_WR) so a FIN from one side doesn't RST the other.
 func spliceData(a: Int32, b: Int32, keepAlive: AnyObject) {
+    let lock = NSLock()
+    var doneCount = 0
+
+    let finish: (Int32, Int32) -> Void = { src, dst in
+        // Half-close: signal EOF toward dst without killing the whole socket.
+        Darwin.shutdown(dst, SHUT_WR)
+        lock.lock()
+        doneCount += 1
+        let shouldClose = doneCount == 2
+        lock.unlock()
+        if shouldClose {
+            Darwin.close(a)
+            Darwin.close(b)
+        }
+    }
+
     let copy: (Int32, Int32) -> Void = { src, dst in
         DispatchQueue.global(qos: .utility).async {
             var buf = [UInt8](repeating: 0, count: 65536)
@@ -486,12 +561,14 @@ func spliceData(a: Int32, b: Int32, keepAlive: AnyObject) {
                 var off = 0
                 while off < n {
                     let w = Darwin.write(dst, Array(buf[off..<n]), n - off)
-                    guard w > 0 else { return }
+                    guard w > 0 else {
+                        finish(src, dst)
+                        return
+                    }
                     off += w
                 }
             }
-            Darwin.close(src)
-            Darwin.close(dst)
+            finish(src, dst)
         }
     }
     copy(a, b)

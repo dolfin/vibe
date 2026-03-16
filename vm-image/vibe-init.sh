@@ -168,15 +168,18 @@ chmod 700 /home/vibe/.ssh
 # Install authorized_keys for root — SSH as root so nerdctl uses system containerd directly.
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
-if [ -f /vibe-shared/vibe-vm.pub ]; then
-    cat /vibe-shared/vibe-vm.pub > /root/.ssh/authorized_keys
-    log "Installed pubkey for root from /vibe-shared ($(wc -c < /root/.ssh/authorized_keys 2>/dev/null) bytes)"
-elif [ -f /etc/vibe/vibe-vm.pub ]; then
-    cat /etc/vibe/vibe-vm.pub > /root/.ssh/authorized_keys
-    log "Installed pubkey for root from /etc/vibe ($(wc -c < /root/.ssh/authorized_keys 2>/dev/null) bytes)"
-else
-    log "ERROR: no pubkey found!"
+# Always install the baked-in build key first (allows host-side SSH debugging).
+# Then append the app-generated key so both work.
+> /root/.ssh/authorized_keys
+if [ -f /etc/vibe/vibe-vm.pub ]; then
+    cat /etc/vibe/vibe-vm.pub >> /root/.ssh/authorized_keys
+    log "Installed baked-in pubkey for root"
 fi
+if [ -f /vibe-shared/vibe-vm.pub ]; then
+    cat /vibe-shared/vibe-vm.pub >> /root/.ssh/authorized_keys
+    log "Installed app pubkey for root from /vibe-shared"
+fi
+log "authorized_keys: $(wc -l < /root/.ssh/authorized_keys 2>/dev/null) keys"
 chmod 600 /root/.ssh/authorized_keys 2>/dev/null || true
 log "root authorized_keys: $(ls -la /root/.ssh/authorized_keys 2>/dev/null || echo 'MISSING')"
 
@@ -212,20 +215,57 @@ else
 fi
 stage "sshd"
 
-# ── Kernel modules for CNI networking ────────────────────────────────────────
-log "Loading networking kernel modules..."
-for mod in bridge br_netfilter xt_MASQUERADE xt_nat ip_tables iptable_nat iptable_filter; do
+# ── Kernel modules for containers ────────────────────────────────────────────
+log "Loading kernel modules..."
+for mod in overlay bridge br_netfilter xt_MASQUERADE xt_nat ip_tables iptable_nat iptable_filter; do
     modprobe "$mod" 2>/dev/null && log "  loaded: $mod" || log "  skip (not available): $mod"
 done
-# Enable IP forwarding and bridge-netfilter so iptables can see bridge traffic
 echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
 echo 1 > /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || true
 echo 1 > /proc/sys/net/bridge/bridge-nf-call-ip6tables 2>/dev/null || true
-log "Networking modules loaded."
+log "Kernel modules loaded."
+
+# ── runc --no-pivot wrapper ───────────────────────────────────────────────────
+# Alpine linux-virt boots from initramfs: the kernel returns EINVAL from
+# pivot_root when the process root IS the initial ramfs. runc's --no-pivot flag
+# uses MS_MOVE instead of pivot_root, which has no such restriction.
+# Replace /usr/bin/runc in-place so containerd-shim finds the wrapper regardless
+# of how it resolves the binary (PATH lookup or absolute path).
+log "Installing runc --no-pivot wrapper..."
+RUNC_REAL=/usr/bin/runc.real
+# Find and rename the real runc binary
+for candidate in /usr/bin/runc /usr/sbin/runc /usr/local/bin/runc; do
+    if [ -f "$candidate" ] && [ ! -f "$RUNC_REAL" ]; then
+        mv "$candidate" "$RUNC_REAL"
+        log "  Moved $candidate → $RUNC_REAL"
+        break
+    fi
+done
+if [ ! -f "$RUNC_REAL" ]; then
+    log "ERROR: runc binary not found in any expected location!"
+    log "  /usr/bin contents: $(ls /usr/bin | grep -i runc || echo 'none')"
+fi
+cat > /usr/bin/runc << 'RUNC_WRAPPER'
+#!/bin/sh
+# runc 1.1.x moved --no-pivot from global to subcommand level (after create/run).
+# Scan args and inject --no-pivot right after the create/run subcommand.
+# Containerd paths never contain spaces/metacharacters so eval is safe here.
+_new=""
+for _a in "$@"; do
+    case "$_a" in
+        create|run) _new="$_new $_a --no-pivot" ;;
+        *) _new="$_new $_a" ;;
+    esac
+done
+eval exec /usr/bin/runc.real $_new
+RUNC_WRAPPER
+chmod +x /usr/bin/runc
+log "runc wrapper installed → /usr/bin/runc (real: $RUNC_REAL)"
 
 # ── containerd ───────────────────────────────────────────────────────────────
 log "Starting containerd..."
 mkdir -p /etc/containerd /run/containerd
+
 cat > /etc/containerd/config.toml << 'CONTAINERD'
 version = 2
 [plugins."io.containerd.grpc.v1.cri".containerd]

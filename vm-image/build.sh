@@ -232,6 +232,11 @@ fi
 # Use Alpine minirootfs (complete Alpine base system) instead of the netboot
 # initramfs-virt. The minirootfs gives us apk, busybox, adduser, etc.
 INITRD_OUT="$DIST_DIR/initrd"
+# Invalidate initrd cache when vibe-init.sh is newer than the built initrd.
+if [[ -f "$INITRD_OUT" && "$SCRIPT_DIR/vibe-init.sh" -nt "$INITRD_OUT" ]]; then
+    echo "==> vibe-init.sh changed — invalidating initrd cache"
+    rm -f "$INITRD_OUT"
+fi
 if [[ ! -f "$INITRD_OUT" ]]; then
     MINIROOTFS_BASE="$WORK_DIR/minirootfs.tar.gz"
     INITRD_EXTRACT="$WORK_DIR/initrd-extract"

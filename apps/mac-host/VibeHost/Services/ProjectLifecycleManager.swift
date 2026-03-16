@@ -161,12 +161,15 @@ actor ProjectLifecycleManager {
             _ = try await ContainerRuntimeClient.runContainer(spec)
         }
 
-        // Set up vsock bridges: host TCP:hostPort ↔ vsock:containerPort ↔ VM TCP:containerPort
+        // Forward host TCP:hostPort → VM NAT IP:containerPort directly.
+        // The VM's NAT IP is already used for SSH — guaranteed reachable.
+        let vmIP = await VMManager.shared.vmIP ?? "127.0.0.1"
         for svc in state.services where svc.containerPort > 0 {
             do {
-                try await VMManager.shared.addBridge(
+                try await VMManager.shared.addTCPBridge(
                     localPort: svc.hostPort,
-                    vsockPort: UInt32(svc.containerPort)
+                    remoteHost: vmIP,
+                    remotePort: svc.containerPort
                 )
             } catch {
                 logger.warning("Bridge failed for \(svc.name): \(error.localizedDescription)")
