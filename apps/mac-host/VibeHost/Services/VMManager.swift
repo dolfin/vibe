@@ -21,7 +21,6 @@ final class VMManager: NSObject {
 
     enum State: Equatable {
         case idle
-        case downloading(Double)
         case booting
         case ready
         case stopping
@@ -30,7 +29,6 @@ final class VMManager: NSObject {
         var label: String {
             switch self {
             case .idle: "Not running"
-            case .downloading(let p): "Downloading (\(Int(p * 100))%)"
             case .booting: "Starting runtime…"
             case .ready: "Ready"
             case .stopping: "Stopping…"
@@ -74,9 +72,6 @@ final class VMManager: NSObject {
 
     private let vmDir: URL
 
-    private static let imageBase =
-        "https://github.com/gilosher/vibe/releases/latest/download"
-
     private override init() {
         let appSupport = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -98,16 +93,25 @@ final class VMManager: NSObject {
         return ip
     }
 
-    private var kernelURL: URL { vmDir.appendingPathComponent("kernel") }
-    private var initrdURL: URL { vmDir.appendingPathComponent("initrd") }
+    private var kernelURL: URL {
+        get throws {
+            guard let url = Bundle.main.url(forResource: "kernel", withExtension: nil) else {
+                throw VMError.bootFailed("VM kernel not found in app bundle — run `make bundle-vm` first")
+            }
+            return url
+        }
+    }
+    private var initrdURL: URL {
+        get throws {
+            guard let url = Bundle.main.url(forResource: "initrd", withExtension: nil) else {
+                throw VMError.bootFailed("VM initrd not found in app bundle — run `make bundle-vm` first")
+            }
+            return url
+        }
+    }
     private var dataDiskURL: URL { vmDir.appendingPathComponent("data.img") }
     private var readyFlagURL: URL { sharedDir.appendingPathComponent(".vibe-ready") }
     var consoleLogURL: URL { vmDir.appendingPathComponent("console.log") }
-
-    private var isImageReady: Bool {
-        FileManager.default.fileExists(atPath: kernelURL.path) &&
-        FileManager.default.fileExists(atPath: initrdURL.path)
-    }
 
     /// Create a blank sparse data disk if it doesn't already exist.
     /// Using FileHandle (not dd/subprocess) produces a raw sparse file
@@ -127,45 +131,8 @@ final class VMManager: NSObject {
 
     func ensureReady() async throws {
         if isReady { return }
-        if !isImageReady { try await downloadImage() }
+        if case .booting = state { return }  // already booting, don't double-start
         try await boot()
-    }
-
-    /// Load a local vibe-runtime-{arch}.tar.gz instead of downloading from GitHub.
-    func loadLocalImage(from url: URL) async throws {
-        if isReady { await stop() }
-        state = .downloading(0)
-        try? FileManager.default.removeItem(at: readyFlagURL)
-
-        // Ensure vmDir exists before extracting
-        try FileManager.default.createDirectory(at: vmDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: sharedDir, withIntermediateDirectories: true)
-
-        let destPath = vmDir.path
-        let srcPath = url.path
-        logger.info("Extracting \(srcPath) → \(destPath)")
-
-        // Copy the tarball into the sandbox first, then extract
-        let localCopy = vmDir.appendingPathComponent("_import.tar.gz")
-        try? FileManager.default.removeItem(at: localCopy)
-        try FileManager.default.copyItem(at: url, to: localCopy)
-
-        let tar = Process()
-        tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        tar.arguments = ["-xzf", localCopy.path, "-C", destPath]
-        let errPipe = Pipe()
-        tar.standardError = errPipe
-        try tar.run()
-        tar.waitUntilExit()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-        let errMsg = String(data: errData, encoding: .utf8) ?? ""
-        try? FileManager.default.removeItem(at: localCopy)
-        guard tar.terminationStatus == 0 else {
-            state = .idle
-            throw VMError.downloadFailed("tar extraction failed (\(tar.terminationStatus)): \(errMsg)")
-        }
-        logger.info("Local image loaded from \(url.lastPathComponent)")
-        state = .idle
     }
 
     /// Forward host TCP:localPort → VM TCP remoteHost:remotePort.
@@ -234,52 +201,27 @@ final class VMManager: NSObject {
         state = .idle
     }
 
-    // MARK: - Download
-
-    private func downloadImage() async throws {
-        #if arch(arm64)
-        let arch = "arm64"
-        #else
-        let arch = "x86_64"
-        #endif
-        let url = URL(string: "\(Self.imageBase)/vibe-runtime-\(arch).tar.gz")!
-        state = .downloading(0)
-        logger.info("Downloading VM image: \(url.absoluteString)")
-        let (tmpURL, _) = try await URLSession.shared.download(from: url)
-        defer { try? FileManager.default.removeItem(at: tmpURL) }
-        state = .downloading(0.9)
-        try FileManager.default.createDirectory(at: vmDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: sharedDir, withIntermediateDirectories: true)
-        let tar = Process()
-        tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        tar.arguments = ["-xzf", tmpURL.path, "-C", vmDir.path]
-        try tar.run()
-        tar.waitUntilExit()
-        guard tar.terminationStatus == 0 else {
-            throw VMError.downloadFailed("tar extraction failed")
-        }
-    }
-
     // MARK: - Boot
 
     private func boot() async throws {
         state = .booting
         try? FileManager.default.removeItem(at: readyFlagURL)
 
+        let kURL = try kernelURL
+        let iURL = try initrdURL
         try ensureDataDisk()
-        let kPath = kernelURL.path, iPath = initrdURL.path, dPath = dataDiskURL.path, sPath = sharedDir.path
         let fm = FileManager.default
-        logger.info("Boot: kernel=\(kPath) exists=\(fm.fileExists(atPath: kPath))")
-        logger.info("Boot: initrd=\(iPath) exists=\(fm.fileExists(atPath: iPath))")
-        logger.info("Boot: data=\(dPath) exists=\(fm.fileExists(atPath: dPath))")
-        logger.info("Boot: shared=\(sPath)")
+        logger.info("Boot: kernel=\(kURL.path) exists=\(fm.fileExists(atPath: kURL.path))")
+        logger.info("Boot: initrd=\(iURL.path) exists=\(fm.fileExists(atPath: iURL.path))")
+        logger.info("Boot: data=\(dataDiskURL.path) exists=\(fm.fileExists(atPath: dataDiskURL.path))")
+        logger.info("Boot: shared=\(sharedDir.path)")
 
         // Generate a fresh SSH keypair each boot — the public key goes to the shared dir
         // where vibe-init.sh picks it up for authorized_keys. This guarantees the host's
         // private key always matches what's in the VM, regardless of initrd contents.
         try await generateSSHKeyPair()
 
-        let config = try buildConfig()
+        let config = try buildConfig(kernelURL: kURL, initrdURL: iURL)
         let machine = VZVirtualMachine(configuration: config)
         machine.delegate = self
         vm = machine
@@ -330,7 +272,7 @@ final class VMManager: NSObject {
         logger.info("SSH keypair generated: \(pubKey.trimmingCharacters(in: .whitespacesAndNewlines))")
     }
 
-    private func buildConfig() throws -> VZVirtualMachineConfiguration {
+    private func buildConfig(kernelURL: URL, initrdURL: URL) throws -> VZVirtualMachineConfiguration {
         let config = VZVirtualMachineConfiguration()
         config.cpuCount = max(2, min(4, ProcessInfo.processInfo.processorCount))
         config.memorySize = 2 * 1024 * 1024 * 1024
@@ -493,13 +435,11 @@ extension VMManager: VZVirtualMachineDelegate {
 // MARK: - Errors
 
 enum VMError: LocalizedError {
-    case downloadFailed(String)
     case bootFailed(String)
     case timeout(String)
 
     var errorDescription: String? {
         switch self {
-        case .downloadFailed(let m): "VM image error: \(m)"
         case .bootFailed(let m): "VM boot failed: \(m)"
         case .timeout(let m): "VM timeout: \(m)"
         }

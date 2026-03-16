@@ -1,4 +1,4 @@
-.PHONY: bootstrap generate build test lint fmt clean demo-packages demo-verify
+.PHONY: bootstrap generate build test lint fmt clean bundle-vm demo-packages demo-verify
 
 bootstrap:
 	@echo "==> Installing Rust toolchain components..."
@@ -41,6 +41,15 @@ fmt-check:
 	@echo "==> Checking Rust formatting..."
 	cargo fmt --all -- --check
 	@echo "==> Format check passed."
+
+bundle-vm:
+	@echo "==> Building VM image..."
+	cd vm-image && bash build.sh
+	@echo "==> Copying kernel and initrd to mac-host resources..."
+	@mkdir -p apps/mac-host/VibeHost/Resources
+	cp vm-image/dist/kernel apps/mac-host/VibeHost/Resources/kernel
+	cp vm-image/dist/initrd apps/mac-host/VibeHost/Resources/initrd
+	@echo "==> VM image bundled (kernel + initrd in Resources/)"
 
 demo-packages: build
 	@echo "==> Generating demo keypair..."

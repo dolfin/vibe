@@ -86,7 +86,7 @@ struct ProjectDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                if !runtime.vmReady {
+                if !VMManager.shared.isReady {
                     vmStatusRow
                 }
             }
@@ -143,12 +143,7 @@ struct ProjectDetailView: View {
                 } label: {
                     Label("Launch", systemImage: "play.fill")
                 }
-                .disabled({
-                    if case .downloading = VMManager.shared.state { return true }
-                    if case .booting = VMManager.shared.state { return true }
-                    if case .stopping = VMManager.shared.state { return true }
-                    return false
-                }())
+                .disabled(!VMManager.shared.isReady)
 
             case .starting, .stopping:
                 ProgressView()
@@ -175,64 +170,24 @@ struct ProjectDetailView: View {
 
     @ViewBuilder
     private var vmStatusRow: some View {
-        let vmState = VMManager.shared.state
-        VStack(alignment: .leading, spacing: 8) {
-            switch vmState {
-            case .downloading(let progress):
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text("Downloading Vibe Runtime…")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    ProgressView(value: progress)
-                }
-            case .booting:
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Starting Vibe Runtime (first boot installs packages, ~2 min)…")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            case .failed(let msg):
-                HStack(spacing: 6) {
-                    Image(systemName: "xmark.circle").foregroundStyle(.red)
-                    Text("Runtime failed: \(msg)")
-                        .font(.caption).foregroundStyle(.red).textSelection(.enabled)
-                }
-            default:
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-                    Text("Vibe Runtime not running")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+        switch VMManager.shared.state {
+        case .booting:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Starting Vibe Runtime…")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-
-            // Local image loader — for testing before uploading to GitHub Releases
-            if case .idle = vmState {
-                Button {
-                    loadLocalImage()
-                } label: {
-                    Label("Load Local Image…", systemImage: "internaldrive")
-                        .font(.caption)
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.blue)
+        case .failed(let msg):
+            HStack(spacing: 6) {
+                Image(systemName: "xmark.circle").foregroundStyle(.red)
+                Text("Runtime failed: \(msg)")
+                    .font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
-        }
-    }
-
-    private func loadLocalImage() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "gz")!]
-        panel.message = "Select vibe-runtime-arm64.tar.gz"
-        panel.prompt = "Load"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task {
-            do {
-                try await VMManager.shared.loadLocalImage(from: url)
-                await runtime.checkRuntime()
-            } catch {
-                runtime.lastError = error.localizedDescription
+        default:
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                Text("Vibe Runtime not running")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
