@@ -246,7 +246,7 @@ struct ProjectDetailView: View {
                 infoRow("App ID", project.appId)
                 infoRow("Format Version", project.formatVersion)
                 infoRow("Created", project.createdAt)
-                infoRow("Package Hash", String(project.packageHash.prefix(16)) + "...")
+                infoRow("Package Hash", String(project.packageHash.prefix(16)) + "…")
                 infoRow("Imported", project.importedAt.formatted(date: .abbreviated, time: .shortened))
             }
             .padding(.vertical, 4)

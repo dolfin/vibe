@@ -159,7 +159,7 @@ struct OpenPackageView: View {
     }
 
     private func loadPackage() async {
-        logger.error("Loading package from: \(self.packageURL.path)")
+        logger.info("Loading package from: \(self.packageURL.path)")
         do {
             let pkg = try PackageExtractor.extract(from: packageURL)
             logger.info("Extracted package: \(pkg.packageManifest.appId)")
@@ -178,7 +178,7 @@ struct OpenPackageView: View {
     }
 
     private func importAndDismiss() {
-        logger.error("Importing package from: \(self.packageURL.path)")
+        logger.info("Importing package from: \(self.packageURL.path)")
         do {
             let project = try store.importPackage(from: packageURL)
             logger.info("Import succeeded: \(project.appName)")

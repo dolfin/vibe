@@ -19,9 +19,6 @@ final class RuntimeState {
     /// Map of project UUID → in-progress status message (e.g. "Pulling images…").
     var statusMessages: [UUID: String] = [:]
 
-    /// Whether the Vibe VM runtime is available.
-    var vmReady = false
-
     /// Error message to display (most recent launch failure).
     var lastError: String?
 
@@ -35,7 +32,6 @@ final class RuntimeState {
     /// Check if the Vibe runtime VM is already running (does NOT start it).
     @MainActor
     func checkRuntime() async {
-        vmReady = VMManager.shared.isReady
     }
 
     /// Launch a project — boot VM if needed, extract, start containers.
@@ -47,7 +43,6 @@ final class RuntimeState {
         logger.info("Launching project: \(project.appName)")
         do {
             try await VMManager.shared.ensureReady()
-            vmReady = await VMManager.shared.isReady
 
             let mgr = lifecycle(for: project)
             _ = try await mgr.prepare(project: project)
