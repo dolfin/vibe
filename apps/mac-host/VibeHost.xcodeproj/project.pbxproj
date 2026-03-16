@@ -6,6 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		8A58D75F2F65C90E00CB8653 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = AA000050AAAA000100000001 /* ZIPFoundation */; };
+		8A58D7602F65C90E00CB8653 /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = AA000052AAAA000100000001 /* Yams */; };
+		8A58D7612F65C90E00CB8654 /* Virtualization.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A58D7622F65C90E00CB8654 /* Virtualization.framework */; };
+/* End PBXBuildFile section */
+
+
 /* Begin PBXContainerItemProxy section */
 		AA000012AAAA000100000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -17,6 +24,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		8A58D7622F65C90E00CB8654 /* Virtualization.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Virtualization.framework; path = System/Library/Frameworks/Virtualization.framework; sourceTree = SDKROOT; };
 		AA000004AAAA000100000001 /* VibeHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VibeHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA000011AAAA000100000001 /* VibeHostTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VibeHostTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -52,6 +60,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8A58D7602F65C90E00CB8653 /* Yams in Frameworks */,
+				8A58D75F2F65C90E00CB8653 /* ZIPFoundation in Frameworks */,
+				8A58D7612F65C90E00CB8654 /* Virtualization.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,12 +76,21 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		8A58D8112F674C0000CB8653 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				8A58D7622F65C90E00CB8654 /* Virtualization.framework */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		AA000002AAAA000100000001 = {
 			isa = PBXGroup;
 			children = (
 				AA000005AAAA000100000001 /* VibeHost */,
 				AA000014AAAA000100000001 /* VibeHostTests */,
 				AA000007AAAA000100000001 /* Products */,
+				8A58D8112F674C0000CB8653 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -432,15 +452,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA000040AAAA000100000001 /* Build configuration list for PBXProject "VibeHost" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				AA000041AAAA000100000001 /* Debug */,
-				AA000042AAAA000100000001 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		AA000030AAAA000100000001 /* Build configuration list for PBXNativeTarget "VibeHost" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -455,6 +466,15 @@
 			buildConfigurations = (
 				AA000034AAAA000100000001 /* Debug */,
 				AA000035AAAA000100000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA000040AAAA000100000001 /* Build configuration list for PBXProject "VibeHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000041AAAA000100000001 /* Debug */,
+				AA000042AAAA000100000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

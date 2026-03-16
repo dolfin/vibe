@@ -45,6 +45,7 @@ fmt-check:
 demo-packages: build
 	@echo "==> Generating demo keypair..."
 	@mkdir -p build/demo
+	@rm -f build/demo/demo-signing.key build/demo/demo-signing.pub
 	cargo run --bin vibe -- keygen -o build/demo/demo-signing
 	@echo "==> Packaging demo projects..."
 	@for dir in examples/nodejs-todo examples/python-api examples/static-site; do \
@@ -53,7 +54,7 @@ demo-packages: build
 		cargo run --bin vibe -- sign build/demo/$$(basename $$dir).vibeapp --key build/demo/demo-signing.key; \
 	done
 	@echo "==> Copying public key to mac-host resources..."
-	cp build/demo/demo-signing.pub apps/mac-host/Sources/Resources/demo-signing.pub
+	cp build/demo/demo-signing.pub apps/mac-host/VibeHost/Resources/demo-signing.pub
 	@echo "==> Demo packages ready in build/demo/"
 
 demo-verify: demo-packages

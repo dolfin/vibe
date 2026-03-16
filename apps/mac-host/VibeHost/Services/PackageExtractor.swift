@@ -87,6 +87,36 @@ enum PackageExtractor {
         )
     }
 
+    /// Extract all app files from a .vibeapp to a directory (skips _vibe_ metadata).
+    static func extractAppFiles(from data: Data, to directory: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        guard let archive = Archive(data: data, accessMode: .read) else {
+            throw ExtractionError.missingPackageManifest
+        }
+
+        for entry in archive {
+            let name = entry.path
+            // Skip metadata files
+            if name.hasPrefix("_vibe_") { continue }
+
+            let destURL = directory.appendingPathComponent(name)
+
+            if entry.type == .directory {
+                try fm.createDirectory(at: destURL, withIntermediateDirectories: true)
+            } else {
+                // Ensure parent directory exists
+                try fm.createDirectory(at: destURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                var fileData = Data()
+                _ = try archive.extract(entry) { chunk in
+                    fileData.append(chunk)
+                }
+                try fileData.write(to: destURL)
+            }
+        }
+    }
+
     /// Extract a specific file's data from a .vibeapp archive.
     static func extractFile(named name: String, from data: Data) throws -> Data? {
         guard let archive = Archive(data: data, accessMode: .read) else {

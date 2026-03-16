@@ -27,18 +27,21 @@ enum StorageManager {
     }
 
     /// Cache a package's archive data under its SHA-256 hash.
-    /// Returns the cache directory path.
+    /// Returns the cache key (hash hex) used to look up the package later.
     static func cachePackage(data: Data) throws -> String {
         ensureDirectories()
         let hash = SHA256.hash(data: data)
         let hashHex = hash.map { String(format: "%02x", $0) }.joined()
         let cacheDir = packageCacheDir.appendingPathComponent(hashHex, isDirectory: true)
+        let archivePath = cacheDir.appendingPathComponent("package.vibeapp")
 
         let fm = FileManager.default
-        if !fm.fileExists(atPath: cacheDir.path) {
+        // Check the FILE (not just the directory) to avoid leaving an empty dir
+        // from a previously interrupted write.
+        if !fm.fileExists(atPath: archivePath.path) {
             try fm.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-            let archivePath = cacheDir.appendingPathComponent("package.vibeapp")
             try data.write(to: archivePath)
+            logger.info("Cached package: \(archivePath.path)")
         }
 
         return hashHex
