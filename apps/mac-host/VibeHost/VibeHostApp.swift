@@ -30,7 +30,8 @@ struct VibeHostApp: App {
                     ProjectDetailView(
                         project: project,
                         store: projectStore,
-                        runtime: runtimeState
+                        runtime: runtimeState,
+                        onRemove: { selectedProject = nil }
                     )
                 } else {
                     Text("Select a project")

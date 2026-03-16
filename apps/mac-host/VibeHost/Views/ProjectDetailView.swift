@@ -8,7 +8,7 @@ struct ProjectDetailView: View {
     let project: Project
     @Bindable var store: ProjectStore
     @Bindable var runtime: RuntimeState
-    @Environment(\.dismiss) private var dismiss
+    var onRemove: () -> Void = {}
 
     @State private var showBrowser = false
 
@@ -327,7 +327,7 @@ struct ProjectDetailView: View {
             Spacer()
             Button("Remove Project", role: .destructive) {
                 store.removeProject(project)
-                dismiss()
+                onRemove()
             }
         }
     }
