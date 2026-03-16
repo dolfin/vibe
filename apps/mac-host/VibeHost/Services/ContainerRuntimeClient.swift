@@ -307,16 +307,32 @@ enum ContainerRuntimeClient {
                 do {
                     try process.run()
                     timer.resume()
+
+                    // Drain stdout and stderr on separate threads WHILE the process runs.
+                    // Without this, a subprocess that writes > ~64 KB (macOS pipe buffer)
+                    // blocks on its write() call, process.waitUntilExit() never returns,
+                    // and we deadlock. nerdctl pull easily exceeds this with progress output.
+                    var stdoutData = Data()
+                    var stderrData = Data()
+                    let drainGroup = DispatchGroup()
+
+                    drainGroup.enter()
+                    DispatchQueue.global().async {
+                        stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                        drainGroup.leave()
+                    }
+                    drainGroup.enter()
+                    DispatchQueue.global().async {
+                        stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                        drainGroup.leave()
+                    }
+
                     process.waitUntilExit()
                     timer.cancel()
-                    let stdout = String(
-                        data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(),
-                        encoding: .utf8
-                    ) ?? ""
-                    let stderr = String(
-                        data: stderrPipe.fileHandleForReading.readDataToEndOfFile(),
-                        encoding: .utf8
-                    ) ?? ""
+                    drainGroup.wait()  // ensure both pipes are fully read
+
+                    let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+                    let stderr = String(data: stderrData, encoding: .utf8) ?? ""
                     if timedOut {
                         continuation.resume(returning: (stdout, stderr, 255))
                     } else {
