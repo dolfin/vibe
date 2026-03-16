@@ -5,7 +5,9 @@
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 LOG=/dev/kmsg
-log() { echo "[vibe-init] $*" > $LOG 2>/dev/null || true; echo "[vibe-init] $*"; }
+# ts: seconds elapsed since kernel boot (from /proc/uptime), e.g. "12.34s"
+ts() { awk '{printf "%.2fs", $1}' /proc/uptime 2>/dev/null || echo "?s"; }
+log() { echo "[vibe-init +$(ts)] $*" > $LOG 2>/dev/null || true; echo "[vibe-init +$(ts)] $*"; }
 stage() { log "STAGE: $1"; [ "$VIRTIOFS_OK" = "true" ] && touch "/vibe-shared/.stage-$1" 2>/dev/null || true; }
 
 log "Starting Vibe Runtime setup..."
@@ -85,10 +87,18 @@ if [ -n "$VMIP" ] && [ "$VIRTIOFS_OK" = "true" ]; then
 fi
 stage "virtiofs"
 
-# ── Install packages (first boot) ───────────────────────────────────────────
-PACKAGES_FLAG=/etc/vibe/.packages-installed
-if [ ! -f "$PACKAGES_FLAG" ]; then
-    log "Installing packages (first boot — this takes ~2 minutes)..."
+# ── Install packages (first boot) or restore from cache ─────────────────────
+ALPINE_VER=$(cat /etc/vibe/alpine-version 2>/dev/null || echo "unknown")
+PACKAGES_CACHE=/var/lib/containerd/.vibe-packages-${ALPINE_VER}.tar.gz
+PACKAGES_FLAG=/var/lib/containerd/.vibe-packages-${ALPINE_VER}.installed
+
+PKG_START=$(awk '{print $1}' /proc/uptime)
+if [ -f "$PACKAGES_FLAG" ] && [ -f "$PACKAGES_CACHE" ]; then
+    log "BENCH packages: cache hit — restoring from $(du -sh "$PACKAGES_CACHE" 2>/dev/null | cut -f1) tarball..."
+    tar -xzf "$PACKAGES_CACHE" -C / 2>/dev/null
+    log "BENCH packages: restore done in $(awk -v s="$PKG_START" '{printf "%.2fs", $1-s}' /proc/uptime)"
+else
+    log "BENCH packages: cache miss — installing from network (first boot)..."
     apk update > /dev/kmsg 2>&1
     apk add --no-cache \
         containerd \
@@ -100,8 +110,14 @@ if [ ! -f "$PACKAGES_FLAG" ]; then
         ca-certificates \
         socat \
         > /dev/kmsg 2>&1
+    log "BENCH packages: install done in $(awk -v s="$PKG_START" '{printf "%.2fs", $1-s}' /proc/uptime)"
+    log "Saving to persistent disk for fast restore..."
+    tar -czf "$PACKAGES_CACHE" \
+        /usr/bin /usr/sbin /usr/lib /usr/local/bin /usr/local/lib /lib/libgcc_s* \
+        /etc/ssl/certs /etc/ssl/cert.pem \
+        2>/dev/null || log "Package cache creation failed (non-fatal)"
     touch "$PACKAGES_FLAG"
-    log "Packages installed."
+    log "Package cache saved ($(du -sh "$PACKAGES_CACHE" | cut -f1))."
 fi
 stage "packages"
 
@@ -272,6 +288,7 @@ version = 2
   snapshotter = "overlayfs"
 CONTAINERD
 
+CONTAINERD_START=$(awk '{print $1}' /proc/uptime)
 containerd > /dev/kmsg 2>&1 &
 
 for i in $(seq 30); do
@@ -280,7 +297,7 @@ for i in $(seq 30); do
 done
 
 if [ -S /run/containerd/containerd.sock ]; then
-    log "containerd ready."
+    log "BENCH containerd: ready in $(awk -v s="$CONTAINERD_START" '{printf "%.2fs", $1-s}' /proc/uptime)"
 else
     log "WARNING: containerd socket not ready after 30s"
 fi
@@ -299,4 +316,5 @@ fi
 
 # ── Signal ready to host ─────────────────────────────────────────────────────
 touch /vibe-shared/.vibe-ready
+log "BENCH total: VM ready in $(ts) since kernel boot"
 log "Vibe Runtime ready."

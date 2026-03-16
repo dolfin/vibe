@@ -49,9 +49,11 @@ actor ProjectLifecycleManager {
     /// Prepare a project — extract files to VM shared dir, resolve ports.
     func prepare(project: Project) async throws -> ManagedState {
         let projectTag = UUID().uuidString.prefix(8).lowercased()
+        let prepareStart = Date()
 
         // Ensure VM is ready before doing anything
         try await VMManager.shared.ensureReady()
+        logger.info("BENCH prepare[\(projectTag)]: VM ready at +\(String(format: "%.2f", -prepareStart.timeIntervalSinceNow))s")
 
         // Get the package data
         let cacheURL = StorageManager.packageCacheDir
@@ -72,9 +74,10 @@ actor ProjectLifecycleManager {
         // Extract app files to the VM shared directory so the VM can see them
         let vmSharedDir = await VMManager.shared.sharedDir
         let extractDir = vmSharedDir.appendingPathComponent("vibe-\(projectTag)", isDirectory: true)
+        let extractStart = Date()
         let pkg = try PackageExtractor.extract(data: packageData)
         try PackageExtractor.extractAppFiles(from: packageData, to: extractDir)
-        logger.info("Extracted to shared dir: \(extractDir.path)")
+        logger.info("BENCH prepare[\(projectTag)]: extraction done in \(String(format: "%.2f", -extractStart.timeIntervalSinceNow))s → \(extractDir.path)")
 
         // Inside the VM, the shared dir is mounted at /vibe-shared
         let vmProjectPath = "/vibe-shared/vibe-\(projectTag)"
@@ -104,6 +107,21 @@ actor ProjectLifecycleManager {
             ))
         }
 
+        // Kick off image pre-pulls in parallel with the file extraction that follows.
+        // ContainerRuntimeClient.pullImage() uses activePullTasks deduplication — if start()
+        // calls pullImage() for the same image later, it simply awaits the in-progress task.
+        let imagesToPrewarm = (pkg.appManifest.services ?? []).map { $0.image ?? "alpine:latest" }
+        let prewarmStart = Date()
+        logger.info("BENCH prepare[\(projectTag)]: starting pre-pull for \(imagesToPrewarm.joined(separator: ", "))")
+        Task.detached { [logger] in
+            await withTaskGroup(of: Void.self) { group in
+                for image in imagesToPrewarm {
+                    group.addTask { try? await ContainerRuntimeClient.pullImage(image) }
+                }
+            }
+            logger.info("BENCH prewarm[\(projectTag)]: all images ready in \(String(format: "%.2f", -prewarmStart.timeIntervalSinceNow))s")
+        }
+
         let state = ManagedState(
             projectId: "vibe-\(projectTag)",
             status: .stopped,
@@ -121,6 +139,7 @@ actor ProjectLifecycleManager {
             throw DockerError.commandFailed("Project not found in lifecycle manager")
         }
 
+        let startTime = Date()
         state.status = .starting
         states[projectId] = state
 
@@ -139,7 +158,9 @@ actor ProjectLifecycleManager {
         // so containerPort IS the VM port, reachable via the VM's NAT IP.
         for svc in state.services {
             do {
+                let pullStart = Date()
                 try await ContainerRuntimeClient.pullImage(svc.image)
+                logger.info("BENCH start[\(state.projectId)]: pull \(svc.image) done in \(String(format: "%.2f", -pullStart.timeIntervalSinceNow))s")
             } catch {
                 logger.warning("Failed to pull \(svc.image), trying local: \(error.localizedDescription)")
             }
@@ -181,6 +202,7 @@ actor ProjectLifecycleManager {
         }
         state.status = .running
         states[projectId] = state
+        logger.info("BENCH start[\(state.projectId)]: all containers running in \(String(format: "%.2f", -startTime.timeIntervalSinceNow))s")
         logger.info("Project started: \(state.projectId) with \(state.services.count) services")
 
         return state

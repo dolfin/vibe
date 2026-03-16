@@ -260,6 +260,9 @@ if [[ ! -f "$INITRD_OUT" ]]; then
     cp "$SCRIPT_DIR/vibe-init.sh" "$INITRD_EXTRACT/etc/vibe/vibe-init.sh"
     chmod +x "$INITRD_EXTRACT/etc/vibe/vibe-init.sh"
 
+    # Inject Alpine version so vibe-init.sh can version its package cache
+    echo "$ALPINE_VERSION" > "$INITRD_EXTRACT/etc/vibe/alpine-version"
+
     # Inject SSH public key
     echo "$SSH_PUBKEY" > "$INITRD_EXTRACT/etc/vibe/vibe-vm.pub"
 

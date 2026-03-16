@@ -27,6 +27,9 @@ struct VibeHostApp: App {
         DocumentGroup(viewing: VibeAppDocument.self) { file in
             DocumentWindowView(document: file.document)
         }
+        .commands {
+            DeveloperCommands()
+        }
 
         // Optional library (Window menu > Library)
         Window("Library", id: "library") {

@@ -140,10 +140,20 @@ final class VMManager: NSObject {
 
     // MARK: - Public API
 
+    /// In-flight boot task. Stored so concurrent callers await the same task
+    /// instead of returning early while the VM is still booting.
+    private var bootTask: Task<Void, Error>?
+
     func ensureReady() async throws {
         if isReady { return }
-        if case .booting = state { return }  // already booting, don't double-start
-        try await boot()
+        if let existing = bootTask {
+            try await existing.value  // await the in-progress boot — don't return early
+            return
+        }
+        let task = Task { [weak self] in try await self?.boot() ?? () }
+        bootTask = task
+        defer { bootTask = nil }
+        try await task.value
     }
 
     /// Forward host TCP:localPort → VM TCP remoteHost:remotePort.
@@ -211,7 +221,21 @@ final class VMManager: NSObject {
         }
     }
 
+    func clearCaches() async {
+        logger.info("Clearing all caches...")
+        await stop()
+        // Delete the VM data disk (package cache + Docker image cache)
+        try? FileManager.default.removeItem(at: dataDiskURL)
+        // Delete the .vibeapp package cache
+        let pkgCache = StorageManager.packageCacheDir
+        try? FileManager.default.removeItem(at: pkgCache)
+        StorageManager.ensureDirectories()
+        logger.info("All caches cleared. Next boot will re-download packages.")
+    }
+
     func stop() async {
+        bootTask?.cancel()
+        bootTask = nil
         bridgeServers.values.forEach { Darwin.close($0) }
         bridgeServers.removeAll()
         bridgeClientFds.values.flatMap { $0 }.forEach { Darwin.shutdown($0, SHUT_RDWR) }
@@ -241,6 +265,8 @@ final class VMManager: NSObject {
         logger.info("Boot: data=\(self.dataDiskURL.path) exists=\(fm.fileExists(atPath: self.dataDiskURL.path))")
         logger.info("Boot: shared=\(self.sharedDir.path)")
 
+        let bootStart = Date()
+
         // Generate a fresh SSH keypair each boot — the public key goes to the shared dir
         // where vibe-init.sh picks it up for authorized_keys. This guarantees the host's
         // private key always matches what's in the VM, regardless of initrd contents.
@@ -252,7 +278,7 @@ final class VMManager: NSObject {
         vm = machine
 
         try await machine.start()
-        logger.info("VM started — waiting for vibe-init.sh to signal ready…")
+        logger.info("BENCH vm-start: hypervisor start in \(String(format: "%.2f", -bootStart.timeIntervalSinceNow))s")
 
         // Grab the vsock device (needed for bridges)
         socketDevice = machine.socketDevices.first as? VZVirtioSocketDevice
@@ -261,7 +287,7 @@ final class VMManager: NSObject {
         try await waitForReadyFlag(timeout: 300)
 
         state = .ready
-        logger.info("VM ready")
+        logger.info("BENCH vm-ready: VM fully ready in \(String(format: "%.2f", -bootStart.timeIntervalSinceNow))s from boot() call")
     }
 
     private func generateSSHKeyPair() async throws {
