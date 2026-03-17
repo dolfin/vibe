@@ -6,9 +6,11 @@ extension UTType {
     static let vibeApp = UTType("ninja.gil.vibe.vibeapp")!
 }
 
+
 @main
 struct VibeHostApp: App {
     @State private var projectStore = ProjectStore()
+    @State private var vaultStore = VaultStore()
     @State private var libraryRuntime = RuntimeState()
     @State private var selectedProject: Project?
     @State private var pendingPackageURL: URL?
@@ -29,53 +31,96 @@ struct VibeHostApp: App {
         DocumentGroup(newDocument: VibeAppDocument()) { file in
             DocumentWindowView(document: file.$document, fileURL: file.fileURL)
         }
+        .environment(vaultStore)
         .commands {
             DeveloperCommands()
         }
 
         // Optional library (Window menu > Library)
         Window("Library", id: "library") {
-            NavigationSplitView {
-                LibraryView(store: projectStore, selectedProject: $selectedProject)
-                    .toolbar {
-                        ToolbarItem {
-                            Button {
-                                openFilePanel()
-                            } label: {
-                                Label("Open...", systemImage: "plus")
-                            }
+            LibraryWindowRoot(
+                projectStore: projectStore,
+                vaultStore: vaultStore,
+                libraryRuntime: libraryRuntime,
+                selectedProject: $selectedProject,
+                pendingPackageURL: $pendingPackageURL
+            )
+        }
+        .environment(vaultStore)
+
+        // Secret Vault window (Window menu > Secret Vault, or ⌘⇧K)
+        Window("Secret Vault", id: "vault") {
+            NavigationStack {
+                VaultView()
+            }
+        }
+        .environment(vaultStore)
+        .defaultSize(width: 560, height: 480)
+        .keyboardShortcut(KeyboardShortcut("k", modifiers: [.command, .shift]))
+    }
+}
+
+// MARK: - Library Window Root
+
+/// Wraps the library NavigationSplitView so it has access to SwiftUI environment actions.
+private struct LibraryWindowRoot: View {
+    let projectStore: ProjectStore
+    let vaultStore: VaultStore
+    let libraryRuntime: RuntimeState
+    @Binding var selectedProject: Project?
+    @Binding var pendingPackageURL: URL?
+
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        NavigationSplitView {
+            LibraryView(store: projectStore, selectedProject: $selectedProject)
+                .toolbar {
+                    ToolbarItem {
+                        Button {
+                            openFilePanel()
+                        } label: {
+                            Label("Open...", systemImage: "plus")
                         }
                     }
-            } detail: {
-                if let project = selectedProject {
-                    ProjectDetailView(
-                        project: project,
-                        runtime: libraryRuntime,
-                        onRemove: {
-                            projectStore.removeProject(project)
-                            selectedProject = nil
+                    ToolbarItem {
+                        Button {
+                            openWindow(id: "vault")
+                        } label: {
+                            Label("Secret Vault", systemImage: "key.horizontal.fill")
                         }
-                    )
-                } else {
-                    Text("Select a project")
-                        .foregroundStyle(.secondary)
+                        .help("Open Secret Vault (⌘⇧K)")
+                    }
                 }
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                VMStatusBar()
-            }
-            .sheet(item: $pendingPackageURL) { url in
-                OpenPackageView(
-                    packageURL: url,
-                    store: projectStore,
-                    onImported: { project in
-                        selectedProject = project
+        } detail: {
+            if let project = selectedProject {
+                ProjectDetailView(
+                    project: project,
+                    runtime: libraryRuntime,
+                    onRemove: {
+                        projectStore.removeProject(project)
+                        selectedProject = nil
                     }
                 )
+            } else {
+                Text("Select a project")
+                    .foregroundStyle(.secondary)
             }
-            .task {
-                await libraryRuntime.checkRuntime()
-            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VMStatusBar()
+        }
+        .sheet(item: $pendingPackageURL) { url in
+            OpenPackageView(
+                packageURL: url,
+                store: projectStore,
+                onImported: { project in
+                    selectedProject = project
+                }
+            )
+        }
+        .task {
+            await libraryRuntime.checkRuntime()
         }
     }
 
@@ -91,6 +136,8 @@ struct VibeHostApp: App {
         }
     }
 }
+
+// MARK: - VM Status Bar
 
 /// Persistent bottom status bar showing Vibe Runtime warm-up state.
 private struct VMStatusBar: View {

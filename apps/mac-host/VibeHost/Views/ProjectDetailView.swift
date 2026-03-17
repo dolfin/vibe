@@ -9,6 +9,8 @@ struct ProjectDetailView: View {
     @Bindable var runtime: RuntimeState
     var onRemove: (() -> Void)? = nil
 
+    @Environment(VaultStore.self) private var vaultStore
+
     private enum ActiveSheet: Identifiable {
         case browser
         case secrets(SecretsEntryView.Mode)
@@ -217,18 +219,30 @@ struct ProjectDetailView: View {
     }
 
     private func launchProject() async {
-        let missing = project.capabilities.requiredSecrets.filter {
-            SecretsManager.load(packageId: project.packageCachePath, name: $0) == nil
+        let missing = project.capabilities.requiredSecrets.filter { envVar in
+            vaultStore.binding(packageId: project.packageCachePath, envVar: envVar) == nil &&
+            SecretsManager.load(packageId: project.packageCachePath, name: envVar) == nil
         }
         if missing.isEmpty {
-            let secrets = SecretsManager.loadAll(
-                packageId: project.packageCachePath,
-                names: project.capabilities.declaredSecrets
-            )
+            let secrets = resolveSecrets()
             await runtime.launchProject(project, secrets: secrets)
         } else {
             activeSheet = .secrets(.launch)
         }
+    }
+
+    /// Builds the secrets dict by checking vault bindings first, then legacy keychain.
+    private func resolveSecrets() -> [String: String] {
+        var secrets: [String: String] = [:]
+        for name in project.capabilities.declaredSecrets {
+            if let entry = vaultStore.binding(packageId: project.packageCachePath, envVar: name),
+               let value = vaultStore.loadValue(for: entry) {
+                secrets[name] = value
+            } else if let value = SecretsManager.load(packageId: project.packageCachePath, name: name) {
+                secrets[name] = value
+            }
+        }
+        return secrets
     }
 
     // MARK: - Info Sections

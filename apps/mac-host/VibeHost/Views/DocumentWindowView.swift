@@ -9,6 +9,7 @@ private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "Document
 struct DocumentWindowView: View {
     @Binding var document: VibeAppDocument
     let fileURL: URL?
+    @Environment(VaultStore.self) private var vaultStore
     @State private var runtime = RuntimeState()
     @State private var isWebLoading = true
     @State private var webError: String?
@@ -144,18 +145,30 @@ struct DocumentWindowView: View {
     // MARK: - Launch
 
     private func launchCurrentProject() async {
-        let missing = project.capabilities.requiredSecrets.filter {
-            SecretsManager.load(packageId: project.packageCachePath, name: $0) == nil
+        let missing = project.capabilities.requiredSecrets.filter { envVar in
+            vaultStore.binding(packageId: project.packageCachePath, envVar: envVar) == nil &&
+            SecretsManager.load(packageId: project.packageCachePath, name: envVar) == nil
         }
         if missing.isEmpty {
-            let secrets = SecretsManager.loadAll(
-                packageId: project.packageCachePath,
-                names: project.capabilities.declaredSecrets
-            )
+            let secrets = resolveSecrets()
             await doLaunch(secrets: secrets)
         } else {
             activeSheet = .secrets
         }
+    }
+
+    /// Builds the secrets dict by checking vault bindings first, then legacy keychain.
+    private func resolveSecrets() -> [String: String] {
+        var secrets: [String: String] = [:]
+        for name in project.capabilities.declaredSecrets {
+            if let entry = vaultStore.binding(packageId: project.packageCachePath, envVar: name),
+               let value = vaultStore.loadValue(for: entry) {
+                secrets[name] = value
+            } else if let value = SecretsManager.load(packageId: project.packageCachePath, name: name) {
+                secrets[name] = value
+            }
+        }
+        return secrets
     }
 
     private func doLaunch(secrets: [String: String] = [:]) async {
