@@ -250,7 +250,7 @@ actor ProjectLifecycleManager {
     }
 
     /// Poll each service port until it accepts connections or the timeout elapses.
-    private func waitForServices(state: ManagedState, maxWaitSeconds: Double = 30) async {
+    private func waitForServices(state: ManagedState, maxWaitSeconds: Double = 180) async {
         let deadline = Date().addingTimeInterval(maxWaitSeconds)
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }

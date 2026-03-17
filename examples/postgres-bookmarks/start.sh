@@ -1,12 +1,14 @@
 #!/bin/sh
 set -e
 
+# Cache apk packages in the data volume — avoids re-downloading on every start.
+# On first run this fetches from the network; subsequent runs install from cache.
+mkdir -p /data/apk-cache
 echo "[bookmarks] Installing PostgreSQL..."
-apk add --no-cache postgresql postgresql-client 2>&1
+apk add --no-cache --cache-dir /data/apk-cache postgresql postgresql-client 2>&1
 
 export PGDATA=/data/pgdata
 
-echo "[bookmarks] Setting up runtime directories..."
 mkdir -p /run/postgresql && chown postgres:postgres /run/postgresql
 
 if [ ! -f "$PGDATA/PG_VERSION" ]; then
@@ -27,11 +29,18 @@ while [ $i -lt 30 ]; do
   i=$((i + 1))
 done
 
-echo "[bookmarks] Ensuring database exists..."
 psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE bookmarks;" 2>/dev/null || true
 
+# Cache node_modules in the data volume — restores on subsequent starts
+# instead of re-fetching from npm.
 echo "[bookmarks] Installing Node.js dependencies..."
-cd /app && npm install --prefer-offline --no-fund --no-audit 2>&1
+if [ -d /data/node_modules ]; then
+  cp -r /data/node_modules /app/node_modules
+else
+  cd /app && npm install --prefer-offline --no-fund --no-audit 2>&1
+  cp -r /app/node_modules /data/node_modules
+fi
 
 echo "[bookmarks] Starting web server..."
+cd /app
 exec node server.js
