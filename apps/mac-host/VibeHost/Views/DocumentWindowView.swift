@@ -34,7 +34,42 @@ struct DocumentWindowView: View {
         content
             .navigationTitle(project.appName)
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    let ui = project.capabilities.browserUI
+                    if ui.showBackButton {
+                        Button {
+                            navControl.goBack?()
+                        } label: {
+                            Image(systemName: "chevron.backward")
+                        }
+                        .disabled(!canGoBack)
+                        .help("Back")
+                    }
+                    if ui.showForwardButton {
+                        Button {
+                            navControl.goForward?()
+                        } label: {
+                            Image(systemName: "chevron.forward")
+                        }
+                        .disabled(!canGoForward)
+                        .help("Forward")
+                    }
+                    if ui.showReloadButton {
+                        Button {
+                            if isWebLoading { navControl.stopLoading?() } else { navControl.reload?() }
+                        } label: {
+                            Image(systemName: isWebLoading ? "xmark" : "arrow.clockwise")
+                        }
+                        .help(isWebLoading ? "Stop" : "Reload")
+                    }
+                    if ui.showHomeButton {
+                        Button {
+                            navControl.goHome?()
+                        } label: {
+                            Image(systemName: "house")
+                        }
+                        .help("Home")
+                    }
                     Button {
                         activeSheet = .info
                     } label: {
@@ -112,91 +147,27 @@ struct DocumentWindowView: View {
     }
 
     private func webContent(url: URL, schemeHandler: VibeSchemeHandler?) -> some View {
-        VStack(spacing: 0) {
-            if project.capabilities.browserUI.hasAnyButton {
-                navBar(homeURL: url)
-                Divider()
+        ZStack {
+            WebView(
+                url: url,
+                schemeHandler: schemeHandler,
+                isLoading: $isWebLoading,
+                loadError: $webError,
+                currentURL: $currentURL,
+                canGoBack: $canGoBack,
+                canGoForward: $canGoForward,
+                navControl: navControl
+            )
+            .id(webViewID)
+            if isWebLoading && webError == nil {
+                ProgressView("Connecting to \(project.appName)…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background.opacity(0.92))
             }
-            ZStack {
-                WebView(
-                    url: url,
-                    schemeHandler: schemeHandler,
-                    isLoading: $isWebLoading,
-                    loadError: $webError,
-                    currentURL: $currentURL,
-                    canGoBack: $canGoBack,
-                    canGoForward: $canGoForward,
-                    navControl: navControl
-                )
-                .id(webViewID)
-                if isWebLoading && webError == nil {
-                    ProgressView("Connecting to \(project.appName)…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.background.opacity(0.92))
-                }
-                if let error = webError {
-                    webErrorOverlay(error)
-                }
+            if let error = webError {
+                webErrorOverlay(error)
             }
         }
-    }
-
-    // MARK: - Nav Bar
-
-    private func navBar(homeURL: URL) -> some View {
-        let ui = project.capabilities.browserUI
-        return HStack(spacing: 2) {
-            if ui.showBackButton {
-                navBarButton(
-                    systemImage: "chevron.backward",
-                    help: "Back",
-                    enabled: canGoBack
-                ) { navControl.goBack?() }
-            }
-            if ui.showForwardButton {
-                navBarButton(
-                    systemImage: "chevron.forward",
-                    help: "Forward",
-                    enabled: canGoForward
-                ) { navControl.goForward?() }
-            }
-            if ui.showReloadButton {
-                navBarButton(
-                    systemImage: isWebLoading ? "xmark" : "arrow.clockwise",
-                    help: isWebLoading ? "Stop" : "Reload",
-                    enabled: true
-                ) {
-                    if isWebLoading { navControl.stopLoading?() } else { navControl.reload?() }
-                }
-            }
-            Spacer()
-            if ui.showHomeButton {
-                navBarButton(systemImage: "house", help: "Home", enabled: true) {
-                    navControl.goHome?()
-                }
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(.bar)
-    }
-
-    private func navBarButton(
-        systemImage: String,
-        help: String,
-        enabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .foregroundStyle(enabled ? Color.primary : Color.primary.opacity(0.3))
-        .help(help)
     }
 
     // MARK: - Launch
