@@ -1,0 +1,24 @@
+kind: vibe.app/v1
+id: com.example.redis-leaderboard
+name: Leaderboard (Redis)
+version: "1.0.0"
+
+services:
+  - name: web
+    image: node:20-alpine
+    command: ["sh", "start.sh"]
+    ports:
+      - container: 3000
+    mounts:
+      - source: data
+        target: /data
+
+state:
+  volumes:
+    - name: data
+
+security:
+  network: true
+
+publisher:
+  name: Vibe Examples
