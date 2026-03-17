@@ -1,0 +1,22 @@
+kind: vibe.app/v1
+id: com.example.ui-reload
+name: "UI Test: Reload"
+version: "1.0.0"
+
+services:
+  - name: web
+    image: nginx:alpine
+    ports:
+      - container: 80
+    mounts:
+      - source: public
+        target: /usr/share/nginx/html
+
+security:
+  network: false
+
+ui:
+  showReloadButton: true
+
+publisher:
+  name: Vibe Examples

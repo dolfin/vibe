@@ -155,6 +155,29 @@ Each entry in the services array defines one container.
 | `name` | string | **required** | Secret name (used as env var name at injection) |
 | `required` | bool | optional | Whether the app refuses to start without this secret. Default: `false` |
 
+### `ui`
+
+Controls browser chrome shown in the app's embedded WebView window.
+All fields default to `false`; omitting the `ui` section entirely shows no navigation controls.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `showBackButton` | bool | optional | Show a back-navigation button. Default: `false` |
+| `showForwardButton` | bool | optional | Show a forward-navigation button. Default: `false` |
+| `showReloadButton` | bool | optional | Show a reload / stop-loading button. Default: `false` |
+| `showHomeButton` | bool | optional | Show a home button that returns to the app's root URL. Default: `false` |
+
+> **Note:** ⌘F Find-in-page works natively in the WebView without any manifest option.
+
+**Example:**
+```yaml
+ui:
+  showBackButton: true
+  showForwardButton: true
+  showReloadButton: true
+  showHomeButton: true
+```
+
 ### `publisher`
 
 | Field | Type | Required | Description |

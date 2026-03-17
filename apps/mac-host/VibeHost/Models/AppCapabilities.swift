@@ -6,11 +6,28 @@ struct AppCapabilities: Codable, Equatable {
     var allowHostFileImport: Bool
     var exposedPorts: [UInt16]
     var secrets: [SecretMeta]
+    var browserUI: BrowserUI
 
     struct SecretMeta: Codable, Equatable {
         let name: String
         let required: Bool
         let howToObtain: String?
+    }
+
+    struct BrowserUI: Codable, Equatable {
+        var showBackButton: Bool
+        var showForwardButton: Bool
+        var showReloadButton: Bool
+        var showHomeButton: Bool
+
+        var hasAnyButton: Bool {
+            showBackButton || showForwardButton || showReloadButton || showHomeButton
+        }
+
+        static let none = BrowserUI(
+            showBackButton: false, showForwardButton: false,
+            showReloadButton: false, showHomeButton: false
+        )
     }
 
     /// Names of secrets marked `required: true`.
@@ -33,19 +50,27 @@ struct AppCapabilities: Codable, Equatable {
         self.secrets = (manifest.secrets ?? []).map {
             SecretMeta(name: $0.name, required: $0.required ?? false, howToObtain: $0.howToObtain)
         }
+        let ui = manifest.ui
+        self.browserUI = BrowserUI(
+            showBackButton: ui?.showBackButton ?? false,
+            showForwardButton: ui?.showForwardButton ?? false,
+            showReloadButton: ui?.showReloadButton ?? false,
+            showHomeButton: ui?.showHomeButton ?? false
+        )
     }
 
-    init(network: Bool = false, allowHostFileImport: Bool = false, exposedPorts: [UInt16] = [], secrets: [SecretMeta] = []) {
+    init(network: Bool = false, allowHostFileImport: Bool = false, exposedPorts: [UInt16] = [], secrets: [SecretMeta] = [], browserUI: BrowserUI = .none) {
         self.network = network
         self.allowHostFileImport = allowHostFileImport
         self.exposedPorts = exposedPorts
         self.secrets = secrets
+        self.browserUI = browserUI
     }
 
     // MARK: - Codable (backward-compat: old data had `requiredSecrets: [String]`, not `secrets`)
 
     private enum CodingKeys: String, CodingKey {
-        case network, allowHostFileImport, exposedPorts, secrets
+        case network, allowHostFileImport, exposedPorts, secrets, browserUI
         case legacyRequiredSecrets = "requiredSecrets"
     }
 
@@ -61,6 +86,7 @@ struct AppCapabilities: Codable, Equatable {
             let oldNames = try container.decodeIfPresent([String].self, forKey: .legacyRequiredSecrets) ?? []
             secrets = oldNames.map { SecretMeta(name: $0, required: true, howToObtain: nil) }
         }
+        browserUI = try container.decodeIfPresent(BrowserUI.self, forKey: .browserUI) ?? .none
     }
 
     func encode(to encoder: Encoder) throws {
@@ -69,5 +95,6 @@ struct AppCapabilities: Codable, Equatable {
         try container.encode(allowHostFileImport, forKey: .allowHostFileImport)
         try container.encode(exposedPorts, forKey: .exposedPorts)
         try container.encode(secrets, forKey: .secrets)
+        try container.encode(browserUI, forKey: .browserUI)
     }
 }

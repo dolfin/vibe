@@ -11,6 +11,9 @@ struct AppBrowserView: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var currentURL: URL?
+    @State private var canGoBack = false
+    @State private var canGoForward = false
+    @State private var navControl = WebViewNavControl()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,7 +24,16 @@ struct AppBrowserView: View {
                 errorState(error)
             } else {
                 ZStack {
-                    WebView(url: appURL, schemeHandler: schemeHandler, isLoading: $isLoading, loadError: $loadError, currentURL: $currentURL)
+                    WebView(
+                        url: appURL,
+                        schemeHandler: schemeHandler,
+                        isLoading: $isLoading,
+                        loadError: $loadError,
+                        currentURL: $currentURL,
+                        canGoBack: $canGoBack,
+                        canGoForward: $canGoForward,
+                        navControl: navControl
+                    )
 
                     if isLoading {
                         ProgressView("Connecting to \(appName)...")
@@ -35,7 +47,7 @@ struct AppBrowserView: View {
     }
 
     private var toolbar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 4) {
             Button {
                 dismiss()
             } label: {
@@ -44,9 +56,17 @@ struct AppBrowserView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .padding(.trailing, 6)
+
+            // Navigation buttons (always visible in AppBrowserView)
+            navButton(systemImage: "chevron.backward", action: { navControl.goBack?() }, enabled: canGoBack)
+            navButton(systemImage: "chevron.forward", action: { navControl.goForward?() }, enabled: canGoForward)
+            reloadStopButton
+
+            Spacer()
 
             Circle()
-                .fill(loadError == nil ? .green : .red)
+                .fill(loadError == nil ? Color.green : Color.red)
                 .frame(width: 8, height: 8)
 
             Text(appName)
@@ -64,6 +84,29 @@ struct AppBrowserView: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    private func navButton(systemImage: String, action: @escaping () -> Void, enabled: Bool) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .medium))
+                .frame(width: 26, height: 26)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .foregroundStyle(enabled ? .primary : .tertiary)
+    }
+
+    private var reloadStopButton: some View {
+        Button {
+            if isLoading { navControl.stopLoading?() } else { navControl.reload?() }
+        } label: {
+            Image(systemName: isLoading ? "xmark" : "arrow.clockwise")
+                .font(.system(size: 14, weight: .medium))
+                .frame(width: 26, height: 26)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
     }
 
     private func errorState(_ message: String) -> some View {
@@ -91,6 +134,17 @@ struct AppBrowserView: View {
     }
 }
 
+// MARK: - Navigation control handle
+
+/// Reference type passed into WebView so the caller can trigger navigation actions.
+final class WebViewNavControl {
+    var goBack: (() -> Void)?
+    var goForward: (() -> Void)?
+    var reload: (() -> Void)?
+    var stopLoading: (() -> Void)?
+    var goHome: (() -> Void)?
+}
+
 // MARK: - WKWebView subclass with isolated undo manager
 //
 // WKWebView registers undo actions for every keystroke and propagates them
@@ -110,6 +164,12 @@ struct WebView: NSViewRepresentable {
     @Binding var isLoading: Bool
     @Binding var loadError: String?
     @Binding var currentURL: URL?
+    /// Reflects WKWebView.canGoBack, updated via KVO. Use `.constant(false)` when unused.
+    var canGoBack: Binding<Bool> = .constant(false)
+    /// Reflects WKWebView.canGoForward, updated via KVO. Use `.constant(false)` when unused.
+    var canGoForward: Binding<Bool> = .constant(false)
+    /// Optional handle for triggering back/forward/reload/stop/home actions.
+    var navControl: WebViewNavControl? = nil
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -125,6 +185,22 @@ struct WebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         context.coordinator.initialURL = url
         webView.load(URLRequest(url: url))
+
+        // KVO for live canGoBack / canGoForward updates
+        webView.addObserver(
+            context.coordinator,
+            forKeyPath: #keyPath(WKWebView.canGoBack),
+            options: [.new], context: nil
+        )
+        webView.addObserver(
+            context.coordinator,
+            forKeyPath: #keyPath(WKWebView.canGoForward),
+            options: [.new], context: nil
+        )
+        context.coordinator.isObservingNav = true
+
+        wireNavControl(context.coordinator.navControl, to: webView)
+
         return webView
     }
 
@@ -135,6 +211,8 @@ struct WebView: NSViewRepresentable {
             context.coordinator.retryCount = 0
             webView.load(URLRequest(url: url))
         }
+        // Keep home URL in sync with current url prop
+        wireNavControl(context.coordinator.navControl, to: webView)
     }
 
     /// Called by SwiftUI when this view is removed from the hierarchy (e.g. when
@@ -146,17 +224,41 @@ struct WebView: NSViewRepresentable {
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
         nsView.stopLoading()
         nsView.navigationDelegate = nil
+        if coordinator.isObservingNav {
+            nsView.removeObserver(coordinator, forKeyPath: #keyPath(WKWebView.canGoBack))
+            nsView.removeObserver(coordinator, forKeyPath: #keyPath(WKWebView.canGoForward))
+            coordinator.isObservingNav = false
+        }
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
+    // MARK: - Private
+
+    private func wireNavControl(_ control: WebViewNavControl?, to webView: WKWebView) {
+        guard let control else { return }
+        let homeURL = url
+        control.goBack      = { [weak webView] in webView?.goBack() }
+        control.goForward   = { [weak webView] in webView?.goForward() }
+        control.reload      = { [weak webView] in webView?.reload() }
+        control.stopLoading = { [weak webView] in webView?.stopLoading() }
+        control.goHome      = { [weak webView] in webView?.load(URLRequest(url: homeURL)) }
+    }
+
+    // MARK: - Coordinator
+
     class Coordinator: NSObject, WKNavigationDelegate {
         let parent: WebView
         var retryCount = 0
         var initialURL: URL?
+        var isObservingNav = false
         private let maxRetries = 8
+
+        /// Lazily resolves the navControl from the parent, so changes to the
+        /// parent's navControl property are always picked up.
+        var navControl: WebViewNavControl? { parent.navControl }
 
         init(_ parent: WebView) {
             self.parent = parent
@@ -206,6 +308,26 @@ struct WebView: NSViewRepresentable {
             if nsError.code == NSURLErrorCancelled { return }
             parent.isLoading = false
             parent.loadError = error.localizedDescription
+        }
+
+        override func observeValue(
+            forKeyPath keyPath: String?,
+            of object: Any?,
+            change: [NSKeyValueChangeKey: Any]?,
+            context: UnsafeMutableRawPointer?
+        ) {
+            guard let webView = object as? WKWebView else {
+                super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+                return
+            }
+            switch keyPath {
+            case #keyPath(WKWebView.canGoBack):
+                parent.canGoBack.wrappedValue = webView.canGoBack
+            case #keyPath(WKWebView.canGoForward):
+                parent.canGoForward.wrappedValue = webView.canGoForward
+            default:
+                super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
+            }
         }
     }
 }

@@ -51,7 +51,7 @@ demo-packages: build
 	@rm -f build/demo/demo-signing.key build/demo/demo-signing.pub
 	cargo run --bin vibe -- keygen -o build/demo/demo-signing
 	@echo "==> Packaging demo projects..."
-	@for dir in examples/nodejs-todo examples/python-api examples/static-site examples/ws-chat examples/sqlite-notes examples/postgres-bookmarks examples/redis-leaderboard; do \
+	@for dir in examples/nodejs-todo examples/python-api examples/static-site examples/ws-chat examples/sqlite-notes examples/postgres-bookmarks examples/redis-leaderboard examples/ui-none examples/ui-back-forward examples/ui-reload examples/ui-full; do \
 		echo "  Packaging $$dir..."; \
 		cargo run --bin vibe -- package $$dir/vibe.yaml -o build/demo/$$(basename $$dir).vibeapp; \
 		cargo run --bin vibe -- sign build/demo/$$(basename $$dir).vibeapp --key build/demo/demo-signing.key; \

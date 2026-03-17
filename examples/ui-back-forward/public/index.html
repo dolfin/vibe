@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UI Test: Back + Forward</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 60px auto; padding: 0 24px; color: #1d1d1f; }
+    h1 { font-size: 2rem; margin-bottom: 4px; }
+    .variant { display: inline-block; background: #0071e3; color: #fff; font-size: 0.75rem; font-weight: 600; padding: 3px 10px; border-radius: 99px; margin-bottom: 24px; letter-spacing: .04em; }
+    p { line-height: 1.6; color: #3a3a3c; }
+    a { color: #0071e3; text-decoration: none; font-weight: 500; }
+    a:hover { text-decoration: underline; }
+    .nav { margin-top: 32px; display: flex; gap: 16px; }
+    .note { margin-top: 32px; padding: 16px; background: #f5f5f7; border-radius: 10px; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Home</h1>
+  <span class="variant">back + forward</span>
+  <p>This variant shows <strong>back and forward buttons</strong> only. Navigate through the pages then use the toolbar buttons to go back and forward.</p>
+  <div class="nav">
+    <a href="page-a.html">→ Go to Page A</a>
+  </div>
+  <div class="note">
+    <strong>What to verify:</strong> Toolbar shows ‹ and › buttons. Back is disabled here (first page). Forward is disabled until you've gone back from a later page.
+  </div>
+</body>
+</html>

@@ -27,6 +27,8 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secrets: Option<Vec<Secret>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui: Option<UiConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publisher: Option<PublisherConfig>,
 }
 
@@ -164,6 +166,25 @@ pub struct Secret {
     pub required: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub how_to_obtain: Option<String>,
+}
+
+/// Browser chrome options for the app's embedded WebView.
+/// All fields default to `false`; omitting `ui` entirely is equivalent to all false.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UiConfig {
+    /// Show a back-navigation button.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_back_button: Option<bool>,
+    /// Show a forward-navigation button.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_forward_button: Option<bool>,
+    /// Show a reload / stop-loading button.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_reload_button: Option<bool>,
+    /// Show a home button that returns to the app's root URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_home_button: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

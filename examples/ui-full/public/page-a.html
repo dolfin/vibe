@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UI Test: All Buttons — Page A</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 60px auto; padding: 0 24px; color: #1d1d1f; }
+    h1 { font-size: 2rem; margin-bottom: 4px; }
+    .variant { display: inline-block; background: #ff3b30; color: #fff; font-size: 0.75rem; font-weight: 600; padding: 3px 10px; border-radius: 99px; margin-bottom: 24px; letter-spacing: .04em; }
+    p { line-height: 1.6; color: #3a3a3c; }
+    a { color: #0071e3; text-decoration: none; font-weight: 500; }
+    a:hover { text-decoration: underline; }
+    .nav { margin-top: 32px; display: flex; gap: 16px; }
+    .timestamp { margin-top: 24px; font-size: 0.85rem; color: #6e6e73; font-variant-numeric: tabular-nums; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9rem; }
+    td, th { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e5ea; }
+    th { color: #6e6e73; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <h1>Page A</h1>
+  <span class="variant">all buttons</span>
+  <p class="timestamp">Loaded at: <script>document.write(new Date().toLocaleTimeString())</script></p>
+
+  <table>
+    <tr><th>Button</th><th>Expected state</th></tr>
+    <tr><td>‹ Back</td><td>Enabled → goes to Home</td></tr>
+    <tr><td>› Forward</td><td>Disabled (no forward history)</td></tr>
+    <tr><td>↻ Reload</td><td>Enabled — updates timestamp</td></tr>
+    <tr><td>⌂ Home</td><td>Enabled — jumps to Home (skips history)</td></tr>
+  </table>
+
+  <div class="nav">
+    <a href="index.html">← Home</a>
+    <a href="page-b.html">→ Page B</a>
+  </div>
+</body>
+</html>

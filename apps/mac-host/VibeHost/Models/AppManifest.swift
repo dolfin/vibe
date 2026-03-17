@@ -13,6 +13,7 @@ struct AppManifest: Codable {
     let state: StateConfig?
     let security: SecurityConfig?
     let secrets: [SecretConfig]?
+    let ui: UIConfig?
     let publisher: PublisherConfig?
 
     struct RuntimeConfig: Codable {
@@ -66,6 +67,13 @@ struct AppManifest: Codable {
         let name: String
         let required: Bool?
         let howToObtain: String?
+    }
+
+    struct UIConfig: Codable {
+        let showBackButton: Bool?
+        let showForwardButton: Bool?
+        let showReloadButton: Bool?
+        let showHomeButton: Bool?
     }
 
     struct PublisherConfig: Codable {

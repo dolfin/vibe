@@ -17,6 +17,9 @@ struct DocumentWindowView: View {
     @State private var schemeHandler: VibeSchemeHandler?
     @State private var webViewID = UUID()
     @State private var pollingTask: Task<Void, Never>?
+    @State private var canGoBack = false
+    @State private var canGoForward = false
+    @State private var navControl = WebViewNavControl()
 
     private enum ActiveSheet: Identifiable {
         case info, secrets
@@ -100,46 +103,100 @@ struct DocumentWindowView: View {
     private var content: some View {
         if runtime.isExposed(project), let port = runtime.exposedPort(for: project),
            let appURL = URL(string: "http://127.0.0.1:\(port)") {
-            ZStack {
-                WebView(
-                    url: appURL,
-                    schemeHandler: nil,
-                    isLoading: $isWebLoading,
-                    loadError: $webError,
-                    currentURL: $currentURL
-                )
-                .id(webViewID)
-                if isWebLoading && webError == nil {
-                    ProgressView("Connecting to \(project.appName)…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.background.opacity(0.92))
-                }
-                if let error = webError {
-                    webErrorOverlay(error)
-                }
-            }
+            webContent(url: appURL, schemeHandler: nil)
         } else if let handler = schemeHandler {
-            ZStack {
-                WebView(
-                    url: URL(string: "vibe-app://app/")!,
-                    schemeHandler: handler,
-                    isLoading: $isWebLoading,
-                    loadError: $webError,
-                    currentURL: $currentURL
-                )
-                .id(webViewID)
-                if isWebLoading && webError == nil {
-                    ProgressView("Connecting to \(project.appName)…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.background.opacity(0.92))
-                }
-                if let error = webError {
-                    webErrorOverlay(error)
-                }
-            }
+            webContent(url: URL(string: "vibe-app://app/")!, schemeHandler: handler)
         } else {
             launchingOverlay
         }
+    }
+
+    private func webContent(url: URL, schemeHandler: VibeSchemeHandler?) -> some View {
+        VStack(spacing: 0) {
+            if project.capabilities.browserUI.hasAnyButton {
+                navBar(homeURL: url)
+                Divider()
+            }
+            ZStack {
+                WebView(
+                    url: url,
+                    schemeHandler: schemeHandler,
+                    isLoading: $isWebLoading,
+                    loadError: $webError,
+                    currentURL: $currentURL,
+                    canGoBack: $canGoBack,
+                    canGoForward: $canGoForward,
+                    navControl: navControl
+                )
+                .id(webViewID)
+                if isWebLoading && webError == nil {
+                    ProgressView("Connecting to \(project.appName)…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.background.opacity(0.92))
+                }
+                if let error = webError {
+                    webErrorOverlay(error)
+                }
+            }
+        }
+    }
+
+    // MARK: - Nav Bar
+
+    private func navBar(homeURL: URL) -> some View {
+        let ui = project.capabilities.browserUI
+        return HStack(spacing: 2) {
+            if ui.showBackButton {
+                navBarButton(
+                    systemImage: "chevron.backward",
+                    help: "Back",
+                    enabled: canGoBack
+                ) { navControl.goBack?() }
+            }
+            if ui.showForwardButton {
+                navBarButton(
+                    systemImage: "chevron.forward",
+                    help: "Forward",
+                    enabled: canGoForward
+                ) { navControl.goForward?() }
+            }
+            if ui.showReloadButton {
+                navBarButton(
+                    systemImage: isWebLoading ? "xmark" : "arrow.clockwise",
+                    help: isWebLoading ? "Stop" : "Reload",
+                    enabled: true
+                ) {
+                    if isWebLoading { navControl.stopLoading?() } else { navControl.reload?() }
+                }
+            }
+            Spacer()
+            if ui.showHomeButton {
+                navBarButton(systemImage: "house", help: "Home", enabled: true) {
+                    navControl.goHome?()
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.bar)
+    }
+
+    private func navBarButton(
+        systemImage: String,
+        help: String,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .foregroundStyle(enabled ? Color.primary : Color.primary.opacity(0.3))
+        .help(help)
     }
 
     // MARK: - Launch

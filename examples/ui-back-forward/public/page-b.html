@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UI Test: Back + Forward — Page B</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 60px auto; padding: 0 24px; color: #1d1d1f; }
+    h1 { font-size: 2rem; margin-bottom: 4px; }
+    .variant { display: inline-block; background: #0071e3; color: #fff; font-size: 0.75rem; font-weight: 600; padding: 3px 10px; border-radius: 99px; margin-bottom: 24px; letter-spacing: .04em; }
+    p { line-height: 1.6; color: #3a3a3c; }
+    a { color: #0071e3; text-decoration: none; font-weight: 500; }
+    a:hover { text-decoration: underline; }
+    .nav { margin-top: 32px; display: flex; gap: 16px; }
+    .note { margin-top: 32px; padding: 16px; background: #f5f5f7; border-radius: 10px; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Page B</h1>
+  <span class="variant">back + forward</span>
+  <p>End of the chain. Use the toolbar <strong>back button</strong> (‹) to go back, then forward (›) to return here.</p>
+  <div class="nav">
+    <a href="page-a.html">← Back to Page A</a>
+    <a href="index.html">⌂ Home</a>
+  </div>
+  <div class="note">
+    <strong>What to verify:</strong> Press ‹ twice to reach Home, then › twice to return here. Forward button should be disabled once you navigate forward to Page B again.
+  </div>
+</body>
+</html>
