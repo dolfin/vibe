@@ -11,7 +11,7 @@
 #   ./build.sh arm64 --clean   # clean and rebuild
 #
 # Output:
-#   dist/vibe-runtime-<arch>.tar.gz — ready to upload to GitHub Releases
+#   dist/kernel, dist/initrd — also copied to Xcode Resources automatically
 #   dist/vibe-vm.key             — SSH private key (add to Xcode as resource)
 
 set -euo pipefail
@@ -89,7 +89,7 @@ KERNEL_OUT="$DIST_DIR/kernel"
 MODULES_CACHE_DIR="$WORK_DIR/modules"
 # linux-virt has virtio_pci, virtio_ring, virtio, virtio_console built-in.
 # virtio_net (network) and virtio_blk (data disk) are still modules in linux-virt.
-MODULES_NEEDED=(failover net_failover virtio_net virtio_blk fuse virtiofs af_packet vsock overlay llc stp bridge)
+MODULES_NEEDED=(failover net_failover virtio_net virtio_blk fuse virtiofs af_packet vsock overlay llc stp ipv6 br_netfilter bridge veth crc32c_generic libcrc32c nf_defrag_ipv4 nf_defrag_ipv6 nf_conntrack x_tables ip_tables nf_nat iptable_nat xt_MASQUERADE xt_nat iptable_filter xt_comment xt_conntrack xt_addrtype xt_mark xt_connmark xt_REDIRECT xt_tcpudp xt_multiport)
 
 _all_cached=true
 [[ ! -f "$KERNEL_OUT" ]] && _all_cached=false
@@ -120,7 +120,7 @@ if [[ "$_all_cached" == "false" ]]; then
 import sys, io, gzip, tarfile, os, lzma
 
 apk_path, kernel_out, modules_dir = sys.argv[1], sys.argv[2], sys.argv[3]
-module_targets = {'failover', 'net_failover', 'virtio_net', 'virtio_blk', 'fuse', 'virtiofs', 'af_packet', 'vsock', 'overlay', 'bridge'}
+module_targets = {'failover', 'net_failover', 'virtio_net', 'virtio_blk', 'fuse', 'virtiofs', 'af_packet', 'vsock', 'overlay', 'llc', 'stp', 'ipv6', 'br_netfilter', 'bridge', 'veth', 'crc32c_generic', 'libcrc32c', 'nf_defrag_ipv4', 'nf_defrag_ipv6', 'nf_conntrack', 'x_tables', 'ip_tables', 'nf_nat', 'iptable_nat', 'xt_MASQUERADE', 'xt_nat', 'iptable_filter', 'xt_comment', 'xt_conntrack', 'xt_addrtype', 'xt_mark', 'xt_connmark', 'xt_REDIRECT', 'xt_tcpudp', 'xt_multiport'}
 found_modules = {}
 kernel_data = None
 
@@ -232,9 +232,9 @@ fi
 # Use Alpine minirootfs (complete Alpine base system) instead of the netboot
 # initramfs-virt. The minirootfs gives us apk, busybox, adduser, etc.
 INITRD_OUT="$DIST_DIR/initrd"
-# Invalidate initrd cache when vibe-init.sh is newer than the built initrd.
-if [[ -f "$INITRD_OUT" && "$SCRIPT_DIR/vibe-init.sh" -nt "$INITRD_OUT" ]]; then
-    echo "==> vibe-init.sh changed — invalidating initrd cache"
+# Invalidate initrd cache when vibe-init.sh OR build.sh (contains the inline /init) is newer.
+if [[ -f "$INITRD_OUT" && ( "$SCRIPT_DIR/vibe-init.sh" -nt "$INITRD_OUT" || "$SCRIPT_DIR/build.sh" -nt "$INITRD_OUT" ) ]]; then
+    echo "==> Init scripts changed — invalidating initrd cache"
     rm -f "$INITRD_OUT"
 fi
 if [[ ! -f "$INITRD_OUT" ]]; then
@@ -313,8 +313,45 @@ insmod /lib/modules/virtiofs.ko 2>/dev/null || true
 # Load overlay for containerd overlayfs snapshotter
 insmod /lib/modules/overlay.ko 2>/dev/null || true
 
-# Load bridge for CNI bridge networking
-insmod /lib/modules/bridge.ko 2>/dev/null || true
+# Load bridge + all dependencies for CNI bridge networking.
+# Load order matters: ipv6 first (bridge uses ipv6_dev_* symbols),
+# then llc and stp (bridge uses llc_mac_hdr_init / stp_proto_*),
+# then bridge itself, then br_netfilter (bridge + netfilter integration).
+_insmod() { f="/lib/modules/$1.ko"; insmod "$f" 2>/tmp/insmod-err && echo "[vibe-init] insmod $1: OK" > /dev/kmsg || echo "[vibe-init] insmod $1: FAILED ($(cat /tmp/insmod-err 2>/dev/null))" > /dev/kmsg; }
+_insmod ipv6
+_insmod llc
+_insmod stp
+_insmod bridge
+_insmod br_netfilter
+_insmod veth
+
+# Load netfilter NAT modules for iptables-legacy (CNI ipMasq + portmap).
+# crc32c dependency chain:
+#   crc32c_generic → registers "crc32c" algorithm using kernel's __crc32c_le
+#   libcrc32c      → allocates "crc32c" shash, exports crc32c() for kernel modules
+#   nf_conntrack   → calls crc32c() for connection tracking checksums
+# Load order: crc32c_generic → libcrc32c → nf_defrag_ipv4/ipv6 → nf_conntrack
+#             → x_tables → ip_tables → nf_nat → iptable_nat/filter → xt_nat/MASQUERADE
+_insmod crc32c_generic
+_insmod libcrc32c
+_insmod nf_defrag_ipv4
+_insmod nf_defrag_ipv6
+_insmod nf_conntrack
+_insmod x_tables
+_insmod ip_tables
+_insmod nf_nat
+_insmod iptable_nat
+_insmod iptable_filter
+_insmod xt_nat
+_insmod xt_MASQUERADE
+_insmod xt_comment
+_insmod xt_conntrack
+_insmod xt_connmark
+_insmod xt_addrtype
+_insmod xt_mark
+_insmod xt_REDIRECT
+_insmod xt_tcpudp
+_insmod xt_multiport
 
 echo "[vibe-init] PID 1 ready, launching vibe-init.sh..." > /dev/kmsg 2>/dev/null || true
 
@@ -342,35 +379,36 @@ fi
 # using FileHandle.truncate(), which produces a raw sparse file that
 # Virtualization.framework accepts without DiskImages format detection issues.
 
-# ── Step 5: Package ─────────────────────────────────────────────────────────
-ARCHIVE="$DIST_DIR/vibe-runtime-${ARCH}.tar.gz"
-echo ""
-echo "==> Packaging $ARCHIVE..."
-tar -czf "$ARCHIVE" -C "$DIST_DIR" kernel initrd
-echo "    ✓ $(du -sh "$ARCHIVE" | cut -f1)"
-
 # Copy private key to dist for reference
 cp "$KEY_PRIVATE" "$DIST_DIR/vibe-vm.key"
 cp "$KEY_PUBLIC"  "$DIST_DIR/vibe-vm.pub"
+
+# ── Step 6: Copy artifacts to Xcode Resources ────────────────────────────────
+RESOURCES_DIR="$(dirname "$SCRIPT_DIR")/apps/mac-host/VibeHost/Resources"
+if [[ -d "$RESOURCES_DIR" ]]; then
+    echo ""
+    echo "==> Copying artifacts to Xcode Resources..."
+    cp "$DIST_DIR/initrd"      "$RESOURCES_DIR/initrd"
+    cp "$DIST_DIR/kernel"      "$RESOURCES_DIR/kernel"
+    cp "$KEY_PRIVATE"          "$RESOURCES_DIR/vibe-vm.key"
+    echo "    ✓ initrd → Resources/initrd"
+    echo "    ✓ kernel → Resources/kernel"
+    echo "    ✓ vibe-vm.key → Resources/vibe-vm.key"
+else
+    echo ""
+    echo "  WARNING: Xcode Resources dir not found at $RESOURCES_DIR"
+    echo "  Copy manually:"
+    echo "    cp $DIST_DIR/initrd $RESOURCES_DIR/initrd"
+    echo "    cp $DIST_DIR/kernel $RESOURCES_DIR/kernel"
+    echo "    cp $KEY_PRIVATE $RESOURCES_DIR/vibe-vm.key"
+fi
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
 echo "║   Build complete!                        ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
-echo "Artifact: $ARCHIVE"
-echo ""
 echo "Next steps:"
 echo ""
-echo "  1. Copy SSH key to Xcode resources:"
-echo "       cp $DIST_DIR/vibe-vm.key \\"
-echo "          $(dirname "$SCRIPT_DIR")/apps/mac-host/VibeHost/Resources/vibe-vm.key"
-echo ""
-echo "  2. Test locally in the app:"
-echo "       In VibeHost → open any project → Runtime → Load Local Image..."
-echo "       Select: $ARCHIVE"
-echo ""
-echo "  3. Upload to GitHub Releases as:"
-echo "       vibe-runtime-${ARCH}.tar.gz"
-echo "       Then update VMManager.imageBase URL."
+echo "  Build and run in Xcode — Resources are already updated."
 echo ""

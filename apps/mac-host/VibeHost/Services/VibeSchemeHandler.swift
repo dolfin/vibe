@@ -1,17 +1,17 @@
 import WebKit
 
-/// WKURLSchemeHandler that forwards vibe-app://app/<path> → http://<vmIP>:<containerPort>/<path>.
+/// WKURLSchemeHandler that forwards vibe-app://app/<path> → http://<vmIP>:<port>/<path>.
 /// All activeTasks access happens on the main thread (WebKit guarantees start/stop on main).
 final class VibeSchemeHandler: NSObject, WKURLSchemeHandler {
     let vmIP: String
-    let containerPort: UInt16
+    let port: UInt16
 
     /// Keyed by ObjectIdentifier(urlSchemeTask). Accessed on main thread only.
     private var activeTasks: [ObjectIdentifier: URLSessionDataTask] = [:]
 
-    init(vmIP: String, containerPort: UInt16) {
+    init(vmIP: String, port: UInt16) {
         self.vmIP = vmIP
-        self.containerPort = containerPort
+        self.port = port
         super.init()
     }
 
@@ -22,10 +22,10 @@ final class VibeSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
 
-        // Rewrite vibe-app://app/path?query → http://vmIP:containerPort/path?query
+        // Rewrite vibe-app://app/path?query → http://vmIP:port/path?query
         components.scheme = "http"
         components.host = vmIP
-        components.port = Int(containerPort)
+        components.port = Int(port)
 
         guard let targetURL = components.url else {
             urlSchemeTask.didFailWithError(URLError(.badURL))

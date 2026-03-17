@@ -83,7 +83,19 @@ actor ProjectLifecycleManager {
         try PackageExtractor.extractAppFiles(from: packageData, to: extractDir)
         logger.info("BENCH prepare[\(projectTag)]: extraction done in \(String(format: "%.2f", -extractStart.timeIntervalSinceNow))s → \(extractDir.path)")
 
-        // Restore saved state (or seed from initial state if no saved state yet)
+        // Always create volume directories declared in the manifest so the container
+        // can bind-mount them and the snapshot poller has a directory to watch.
+        // This is critical after a revert where no saved or initial state exists —
+        // without pre-creating the directory the host path is missing, nerdctl
+        // cannot bind-mount it, and latestModDate() returns nil so writes are
+        // never detected and no state is ever saved.
+        let declaredVolumeNames = (pkg.appManifest.state?.volumes ?? []).map { $0.name }
+        for volName in declaredVolumeNames {
+            let volDir = extractDir.appendingPathComponent(volName, isDirectory: true)
+            try FileManager.default.createDirectory(at: volDir, withIntermediateDirectories: true)
+        }
+
+        // Restore saved state (priority), or seed from signed initial state if present.
         let savedState = StorageManager.loadState(for: project.packageCachePath)
         if !savedState.isEmpty {
             try PackageExtractor.extractStateTarballs(savedState, to: extractDir)
@@ -93,6 +105,8 @@ actor ProjectLifecycleManager {
             if !initialState.isEmpty {
                 try PackageExtractor.extractStateTarballs(initialState, to: extractDir)
                 logger.info("prepare[\(projectTag)]: seeded \(initialState.count) initial state volume(s)")
+            } else if !declaredVolumeNames.isEmpty {
+                logger.info("prepare[\(projectTag)]: \(declaredVolumeNames.count) volume(s) start empty")
             }
         }
 
@@ -172,9 +186,10 @@ actor ProjectLifecycleManager {
             }
         }
 
-        // Start containers using host networking — CNI bridge is not available in
-        // linux-virt kernel. Containers share the VM's network namespace directly,
-        // so containerPort IS the VM port, reachable via the VM's NAT IP.
+        // Capture VM IP before the container loop so socat logging and waitForServices
+        // can use it immediately.
+        state.vmIP = await VMManager.shared.vmIP ?? "127.0.0.1"
+
         for svc in state.services {
             do {
                 let pullStart = Date()
@@ -194,15 +209,20 @@ actor ProjectLifecycleManager {
                 ))
             }
 
+            var portMappings: [DockerPortMapping] = []
+            if svc.containerPort > 0 && svc.hostPort > 0 {
+                portMappings.append(DockerPortMapping(host: svc.hostPort, container: svc.containerPort))
+            }
+
             let spec = ContainerSpec(
                 name: svc.containerName,
                 image: svc.image,
                 command: svc.command,
                 env: ["VIBE_PROJECT_ID": state.projectId],
-                ports: [],        // not needed with --network host
+                ports: portMappings,
                 volumes: volumes,
                 workingDir: "/app",
-                network: "host",  // bypass CNI; container port = VM port
+                network: "bridge",
                 labels: [
                     "vibe.project": state.projectId,
                     "vibe.service": svc.name
@@ -211,10 +231,6 @@ actor ProjectLifecycleManager {
 
             _ = try await ContainerRuntimeClient.runContainer(spec)
         }
-
-        // Store the VM's NAT IP for scheme handler / future expose use.
-        // Bridges are NOT created at launch — the WKURLSchemeHandler proxies internally.
-        state.vmIP = await VMManager.shared.vmIP ?? "127.0.0.1"
 
         for i in state.services.indices {
             state.services[i].running = true
@@ -239,14 +255,14 @@ actor ProjectLifecycleManager {
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
 
-        var pending = state.services.filter { $0.containerPort > 0 }
+        var pending = state.services.filter { $0.hostPort > 0 }
         guard !pending.isEmpty else { return }
 
         while !pending.isEmpty, Date() < deadline {
             try? await Task.sleep(for: .milliseconds(300))
             var stillWaiting: [ServiceRunState] = []
             for svc in pending {
-                let urlStr = "http://\(state.vmIP):\(svc.containerPort)/"
+                let urlStr = "http://\(state.vmIP):\(svc.hostPort)/"
                 guard let url = URL(string: urlStr) else { continue }
                 var req = URLRequest(url: url, timeoutInterval: 0.5)
                 req.httpMethod = "HEAD"
@@ -273,7 +289,7 @@ actor ProjectLifecycleManager {
         state.status = .stopping
         states[projectId] = state
 
-        // Remove TCP port bridges
+        // Remove TCP port bridges (expose mode)
         for svc in state.services where svc.hostPort > 0 {
             await VMManager.shared.removeBridge(localPort: svc.hostPort)
         }
@@ -297,13 +313,13 @@ actor ProjectLifecycleManager {
     /// Start a TCP bridge so the app is reachable at 127.0.0.1:hostPort.
     func expose(projectId: UUID) async throws {
         guard let state = states[projectId],
-              let svc = state.services.first(where: { $0.containerPort > 0 }) else { return }
+              let svc = state.services.first(where: { $0.hostPort > 0 }) else { return }
         try await VMManager.shared.addTCPBridge(
             localPort: svc.hostPort,
             remoteHost: state.vmIP,
-            remotePort: svc.containerPort
+            remotePort: svc.hostPort
         )
-        logger.info("Exposed \(state.projectId): 127.0.0.1:\(svc.hostPort) → \(state.vmIP):\(svc.containerPort)")
+        logger.info("Exposed \(state.projectId): 127.0.0.1:\(svc.hostPort) → \(state.vmIP):\(svc.hostPort)")
     }
 
     /// Remove the TCP bridge (if any).

@@ -53,7 +53,10 @@ struct DocumentWindowView: View {
             // the newer state on top of the restore.
             .onChange(of: project.id) { _, _ in
                 Task {
-                    pollingTask?.cancel()
+                    if let task = pollingTask {
+                        task.cancel()
+                        await task.value
+                    }
                     pollingTask = nil
                     schemeHandler = nil
                     await runtime.stopAllProjects()
@@ -61,10 +64,14 @@ struct DocumentWindowView: View {
                 }
             }
             .onDisappear {
-                pollingTask?.cancel()
+                let task = pollingTask
                 pollingTask = nil
+                task?.cancel()
                 let p = project; let rt = runtime
-                Task { await rt.stopProject(p) }
+                Task {
+                    await task?.value
+                    await rt.stopProject(p)
+                }
             }
             .frame(minWidth: 800, minHeight: 600)
             .focusedValue(\.vibeDocumentContext, VibeDocumentContext(
@@ -127,7 +134,7 @@ struct DocumentWindowView: View {
     private func launchCurrentProject() async {
         await runtime.launchProject(project)
         if let ep = runtime.vmEndpoint(for: project) {
-            schemeHandler = VibeSchemeHandler(vmIP: ep.vmIP, containerPort: ep.containerPort)
+            schemeHandler = VibeSchemeHandler(vmIP: ep.vmIP, port: ep.hostPort)
         }
         startVolumePolling()
     }
@@ -183,12 +190,17 @@ struct DocumentWindowView: View {
     }
 
     private func latestModDate(in dir: URL) -> Date? {
-        var latest: Date?
+        // Include the directory's own mtime as the baseline. A directory's mtime
+        // changes whenever files are added or removed — so an empty-but-existing
+        // directory still produces a stable (non-nil) value that will advance on
+        // the first write, letting the poller detect the initial data creation.
+        var latest = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
         guard let enumerator = FileManager.default.enumerator(
             at: dir,
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
-        ) else { return nil }
+        ) else { return latest }
         for case let url as URL in enumerator {
             if let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
                let date = values.contentModificationDate {
@@ -203,15 +215,29 @@ struct DocumentWindowView: View {
     private func revertAction() async {
         guard !project.packageCachePath.isEmpty else { return }
 
-        // Stop polling so we don't snapshot stale state during the restart.
-        pollingTask?.cancel()
+        // Step 1: Cancel polling and WAIT for the task to fully exit.
+        // Swift cooperative cancellation only takes effect at suspension points.
+        // The snapshot loop runs tar + StorageManager.saveState() synchronously,
+        // so simply calling cancel() doesn't prevent a final stateDir write from
+        // racing with our deletion below. Awaiting the task value ensures no
+        // concurrent writer remains before we touch the state directory.
+        if let task = pollingTask {
+            task.cancel()
+            await task.value   // blocks until the task's loop exits
+        }
         pollingTask = nil
 
-        // Drop saved state from cache so the re-launch starts clean.
+        // Step 2: Show launching overlay and stop containers.
+        // Containers must be stopped before we delete stateDir so no in-flight
+        // container write can restore dirty data after the deletion.
+        schemeHandler = nil
+        await runtime.stopProject(project)
+
+        // Step 3: Delete saved state — now safe, no writer can race.
         let stateDir = StorageManager.stateDir(for: project.packageCachePath)
         try? FileManager.default.removeItem(at: stateDir)
 
-        // Write the clean (state-free) cached package back to disk.
+        // Step 4: Write the clean (state-free) cached package back to disk.
         let cacheURL = StorageManager.packageCacheDir
             .appendingPathComponent(project.packageCachePath)
             .appendingPathComponent("package.vibeapp")
@@ -219,10 +245,8 @@ struct DocumentWindowView: View {
         document.rawPackageData = cleanData
         NSApp.sendAction(Selector(("saveDocument:")), to: nil, from: nil)
 
-        // Reset the UI to the launching state, restart the containers with clean
-        // state, then bring the WebView back up with the reverted content.
-        schemeHandler = nil
-        await runtime.stopProject(project)
+        // Step 5: Relaunch. prepare() will find no savedState and no initialState,
+        // so the volume directory starts completely empty.
         await launchCurrentProject()
         logger.info("Reverted to original state and reloaded")
     }
@@ -394,7 +418,7 @@ private struct ProjectInfoSheet: View {
                                             if let ep = runtime.vmEndpoint(for: project) {
                                                 schemeHandler = VibeSchemeHandler(
                                                     vmIP: ep.vmIP,
-                                                    containerPort: ep.containerPort
+                                                    port: ep.hostPort
                                                 )
                                             }
                                         }

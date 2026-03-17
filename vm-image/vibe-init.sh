@@ -105,11 +105,14 @@ else
         nerdctl \
         openssh-server \
         iptables \
-        ip6tables \
+        iptables-legacy \
         e2fsprogs \
         ca-certificates \
         socat \
         > /dev/kmsg 2>&1
+    # Force legacy iptables (avoids nf_tables kernel module requirement)
+    ln -sf iptables-legacy /sbin/iptables 2>/dev/null || true
+    ln -sf ip6tables-legacy /sbin/ip6tables 2>/dev/null || true
     log "BENCH packages: install done in $(awk -v s="$PKG_START" '{printf "%.2fs", $1-s}' /proc/uptime)"
     log "Saving to persistent disk for fast restore..."
     tar -czf "$PACKAGES_CACHE" \
@@ -135,8 +138,7 @@ fi
 
 # ── CNI network config ───────────────────────────────────────────────────────
 mkdir -p /etc/cni/net.d
-if [ ! -f /etc/cni/net.d/10-vibe.conflist ]; then
-    cat > /etc/cni/net.d/10-vibe.conflist << 'CNI'
+cat > /etc/cni/net.d/10-vibe.conflist << 'CNI'
 {
   "cniVersion": "1.0.0",
   "name": "vibe-bridge",
@@ -157,7 +159,6 @@ if [ ! -f /etc/cni/net.d/10-vibe.conflist ]; then
   ]
 }
 CNI
-fi
 stage "cni"
 
 # ── vibe user ────────────────────────────────────────────────────────────────
@@ -239,7 +240,21 @@ done
 echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
 echo 1 > /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || true
 echo 1 > /proc/sys/net/bridge/bridge-nf-call-ip6tables 2>/dev/null || true
-log "Kernel modules loaded."
+log "Kernel modules loaded. lsmod: $(cat /proc/modules 2>/dev/null | awk '{print $1}' | tr '\n' ' ')"
+
+# ── Pre-create nerdctl bridge ─────────────────────────────────────────────────
+# CNI's bridge plugin reuses an existing interface rather than creating one,
+# so pre-creating nerdctl0 here avoids the CNI bridge-creation EOPNOTSUPP
+# that occurs when the bridge module is not yet registered with RTNETLINK.
+if ip link add nerdctl0 type bridge 2>/tmp/bridge-test.err; then
+    ip link set nerdctl0 up 2>/dev/null || true
+    log "nerdctl0 bridge pre-created OK"
+else
+    log "nerdctl0 bridge pre-create FAILED: $(cat /tmp/bridge-test.err 2>/dev/null)"
+    log "  bridge module loaded: $(grep -c '^bridge ' /proc/modules 2>/dev/null || echo 0)"
+    log "  llc loaded: $(grep -c '^llc ' /proc/modules 2>/dev/null || echo 0)"
+    log "  stp loaded: $(grep -c '^stp ' /proc/modules 2>/dev/null || echo 0)"
+fi
 
 # ── runc --no-pivot wrapper ───────────────────────────────────────────────────
 # Alpine linux-virt boots from initramfs: the kernel returns EINVAL from

@@ -99,7 +99,7 @@ enum ContainerRuntimeClient {
         var nerdctlArgs = ["nerdctl", "run", "-d", "--name", spec.name]
 
         for pm in spec.ports {
-            nerdctlArgs += ["-p", "127.0.0.1:\(pm.host):\(pm.container)"]
+            nerdctlArgs += ["-p", "\(pm.host):\(pm.container)"]
         }
         for (k, v) in spec.env {
             nerdctlArgs += ["-e", "\(k)=\(v)"]

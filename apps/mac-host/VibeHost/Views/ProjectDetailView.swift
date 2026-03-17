@@ -36,7 +36,7 @@ struct ProjectDetailView: View {
                         ? URL(string: "http://127.0.0.1:\(ep.hostPort)/")!
                         : URL(string: "vibe-app://app/")!,
                     schemeHandler: runtime.isExposed(project) ? nil
-                        : VibeSchemeHandler(vmIP: ep.vmIP, containerPort: ep.containerPort),
+                        : VibeSchemeHandler(vmIP: ep.vmIP, port: ep.hostPort),
                     appName: project.appName
                 )
             }

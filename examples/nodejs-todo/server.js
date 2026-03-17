@@ -81,7 +81,8 @@ const HTML = `<!DOCTYPE html>
       const input = document.getElementById("input");
       if (!input.value.trim()) return;
       try {
-        await fetch("/todos", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({title: input.value.trim()}) });
+        const res = await fetch("/todos", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({title: input.value.trim()}) });
+        if (!res.ok) throw new Error("Server error " + res.status);
         input.value = "";
         load();
       } catch (e) {
@@ -91,7 +92,8 @@ const HTML = `<!DOCTYPE html>
 
     async function toggle(id) {
       try {
-        await fetch("/todos/" + id + "/toggle", { method: "PATCH" });
+        const res = await fetch("/todos/" + id + "/toggle", { method: "PATCH" });
+        if (!res.ok) throw new Error("Server error " + res.status);
         load();
       } catch (e) {
         setStatus("Could not update \u2014 server unavailable.", true);
@@ -114,27 +116,41 @@ const server = http.createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
-      const todo = JSON.parse(body);
-      todo.id = todos.length + 1;
-      todo.done = false;
-      todos.push(todo);
-      saveTodos(todos);
-      res.setHeader("Content-Type", "application/json");
-      res.statusCode = 201;
-      res.end(JSON.stringify(todo));
+      try {
+        const todo = JSON.parse(body);
+        todo.id = todos.length + 1;
+        todo.done = false;
+        todos.push(todo);
+        saveTodos(todos);
+        res.setHeader("Content-Type", "application/json");
+        res.statusCode = 201;
+        res.end(JSON.stringify(todo));
+      } catch (e) {
+        console.error("POST /todos error:", e);
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Server error" }));
+      }
     });
   } else if (req.method === "PATCH" && req.url.startsWith("/todos/") && req.url.endsWith("/toggle")) {
-    const id = parseInt(req.url.split("/")[2]);
-    const todo = todos.find((t) => t.id === id);
-    if (todo) {
-      todo.done = !todo.done;
-      saveTodos(todos);
+    try {
+      const id = parseInt(req.url.split("/")[2]);
+      const todo = todos.find((t) => t.id === id);
+      if (todo) {
+        todo.done = !todo.done;
+        saveTodos(todos);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(todo));
+      } else {
+        res.statusCode = 404;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "Not found" }));
+      }
+    } catch (e) {
+      console.error("PATCH /todos toggle error:", e);
+      res.statusCode = 500;
       res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify(todo));
-    } else {
-      res.statusCode = 404;
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ error: "Not found" }));
+      res.end(JSON.stringify({ error: "Server error" }));
     }
   } else {
     res.statusCode = 404;
@@ -143,6 +159,18 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(3000, () => {
-  console.log("Todo API running on port 3000");
-});
+function listen(port, retriesLeft) {
+  server.listen(port, () => {
+    console.log("Todo API running on port " + port);
+  }).on("error", function (err) {
+    if (err.code === "EADDRINUSE" && retriesLeft > 0) {
+      console.log("Port " + port + " in use, retrying in 500ms… (" + retriesLeft + " left)");
+      server.close();
+      setTimeout(function () { listen(port, retriesLeft - 1); }, 500);
+    } else {
+      console.error("Failed to start server:", err);
+      process.exit(1);
+    }
+  });
+}
+listen(3000, 20);
