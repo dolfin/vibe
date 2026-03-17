@@ -65,6 +65,7 @@ struct AppManifest: Codable {
     struct SecretConfig: Codable {
         let name: String
         let required: Bool?
+        let howToObtain: String?
     }
 
     struct PublisherConfig: Codable {

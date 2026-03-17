@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import os
 
 private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "Lifecycle")
@@ -167,7 +168,7 @@ actor ProjectLifecycleManager {
     }
 
     /// Start all containers for a project.
-    func start(projectId: UUID) async throws -> ManagedState {
+    func start(projectId: UUID, secrets: [String: String] = [:]) async throws -> ManagedState {
         guard var state = states[projectId] else {
             throw DockerError.commandFailed("Project not found in lifecycle manager")
         }
@@ -214,11 +215,14 @@ actor ProjectLifecycleManager {
                 portMappings.append(DockerPortMapping(host: svc.hostPort, container: svc.containerPort))
             }
 
+            var env = ["VIBE_PROJECT_ID": state.projectId]
+            env.merge(secrets) { _, new in new }
+
             let spec = ContainerSpec(
                 name: svc.containerName,
                 image: svc.image,
                 command: svc.command,
-                env: ["VIBE_PROJECT_ID": state.projectId],
+                env: env,
                 ports: portMappings,
                 volumes: volumes,
                 workingDir: "/app",
@@ -249,24 +253,18 @@ actor ProjectLifecycleManager {
         return state
     }
 
-    /// Poll each service port until it accepts connections or the timeout elapses.
+    /// Probe each service port via TCP until it accepts connections or the timeout elapses.
+    /// Uses NWConnection instead of URLSession to avoid noisy system task error logs.
     private func waitForServices(state: ManagedState, maxWaitSeconds: Double = 180) async {
         let deadline = Date().addingTimeInterval(maxWaitSeconds)
-        let session = URLSession(configuration: .ephemeral)
-        defer { session.invalidateAndCancel() }
-
         var pending = state.services.filter { $0.hostPort > 0 }
         guard !pending.isEmpty else { return }
 
         while !pending.isEmpty, Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(300))
+            try? await Task.sleep(for: .milliseconds(500))
             var stillWaiting: [ServiceRunState] = []
             for svc in pending {
-                let urlStr = "http://\(state.vmIP):\(svc.hostPort)/"
-                guard let url = URL(string: urlStr) else { continue }
-                var req = URLRequest(url: url, timeoutInterval: 0.5)
-                req.httpMethod = "HEAD"
-                if let _ = try? await session.data(for: req) {
+                if await tcpPortOpen(host: state.vmIP, port: svc.hostPort) {
                     logger.info("start[\(state.projectId)]: \(svc.name) ready on :\(svc.containerPort)")
                 } else {
                     stillWaiting.append(svc)
@@ -277,6 +275,39 @@ actor ProjectLifecycleManager {
 
         if !pending.isEmpty {
             logger.warning("start[\(state.projectId)]: timed out waiting for \(pending.map(\.name).joined(separator: ", "))")
+        }
+    }
+
+    /// Returns true as soon as a TCP connection to host:port is established.
+    /// Times out after 500 ms per attempt. Silent — no URLSession task logs.
+    private func tcpPortOpen(host: String, port: UInt16) async -> Bool {
+        await withCheckedContinuation { continuation in
+            guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+                continuation.resume(returning: false)
+                return
+            }
+            let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
+            let q = DispatchQueue(label: "ninja.gil.VibeHost.tcpProbe.\(port)")
+            var done = false
+
+            func finish(_ result: Bool) {
+                q.async {
+                    guard !done else { return }
+                    done = true
+                    connection.cancel()
+                    continuation.resume(returning: result)
+                }
+            }
+
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:           finish(true)
+                case .failed, .cancelled: finish(false)
+                default: break
+                }
+            }
+            connection.start(queue: q)
+            q.asyncAfter(deadline: .now() + 0.5) { finish(false) }
         }
     }
 

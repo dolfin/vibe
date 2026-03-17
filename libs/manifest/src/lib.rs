@@ -162,6 +162,8 @@ pub struct Secret {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub required: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub how_to_obtain: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

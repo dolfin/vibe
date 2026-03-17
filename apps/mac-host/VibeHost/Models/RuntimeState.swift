@@ -38,7 +38,7 @@ final class RuntimeState {
     }
 
     /// Launch a project — boot VM if needed, extract, start containers.
-    func launchProject(_ project: Project) async {
+    func launchProject(_ project: Project, secrets: [String: String] = [:]) async {
         statuses[project.id] = .starting
         lastError = nil
         statusMessages[project.id] = nil
@@ -51,7 +51,7 @@ final class RuntimeState {
             _ = try await mgr.prepare(project: project)
 
             statusMessages[project.id] = "Pulling images — first run may take a few minutes…"
-            _ = try await mgr.start(projectId: project.id)
+            _ = try await mgr.start(projectId: project.id, secrets: secrets)
             statusMessages[project.id] = nil
             statuses[project.id] = .running
 

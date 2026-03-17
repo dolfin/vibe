@@ -24,6 +24,12 @@ security:
 secrets:
   - name: API_SECRET
     required: true
+    howToObtain: |
+      Generate a secure random string for your API secret.
+
+      You can use any password manager or run:
+
+      `openssl rand -hex 32`
 
 publisher:
   name: Vibe Examples

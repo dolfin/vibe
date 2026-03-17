@@ -75,6 +75,9 @@ final class ProjectStore {
         projects.removeAll { $0.id == project.id }
         save()
 
+        // Clean up Keychain secrets
+        SecretsManager.deleteAll(for: project.packageCachePath, names: project.capabilities.declaredSecrets)
+
         // Clean up cache if no other project references it
         let cachePath = StorageManager.packageCacheDir.appendingPathComponent(project.packageCachePath)
         try? FileManager.default.removeItem(at: cachePath)

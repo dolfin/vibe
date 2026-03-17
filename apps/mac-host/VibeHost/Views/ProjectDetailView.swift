@@ -9,7 +9,18 @@ struct ProjectDetailView: View {
     @Bindable var runtime: RuntimeState
     var onRemove: (() -> Void)? = nil
 
-    @State private var showBrowser = false
+    private enum ActiveSheet: Identifiable {
+        case browser
+        case secrets(SecretsEntryView.Mode)
+        var id: String {
+            switch self {
+            case .browser: "browser"
+            case .secrets(let m): "secrets-\(m == .launch ? "launch" : "manage")"
+            }
+        }
+    }
+
+    @State private var activeSheet: ActiveSheet?
 
     private var status: ProjectRunStatus {
         runtime.status(for: project)
@@ -22,6 +33,9 @@ struct ProjectDetailView: View {
                 runtimeControls
                 trustSection
                 capabilitiesSection
+                if !project.capabilities.secrets.isEmpty {
+                    secretsSection
+                }
                 packageInfoSection
                 filesSection
                 removeSection
@@ -29,15 +43,26 @@ struct ProjectDetailView: View {
             .padding()
         }
         .navigationTitle(project.appName)
-        .sheet(isPresented: $showBrowser) {
-            if let ep = runtime.vmEndpoint(for: project) {
-                AppBrowserView(
-                    appURL: runtime.isExposed(project)
-                        ? URL(string: "http://127.0.0.1:\(ep.hostPort)/")!
-                        : URL(string: "vibe-app://app/")!,
-                    schemeHandler: runtime.isExposed(project) ? nil
-                        : VibeSchemeHandler(vmIP: ep.vmIP, port: ep.hostPort),
-                    appName: project.appName
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .browser:
+                if let ep = runtime.vmEndpoint(for: project) {
+                    AppBrowserView(
+                        appURL: runtime.isExposed(project)
+                            ? URL(string: "http://127.0.0.1:\(ep.hostPort)/")!
+                            : URL(string: "vibe-app://app/")!,
+                        schemeHandler: runtime.isExposed(project) ? nil
+                            : VibeSchemeHandler(vmIP: ep.vmIP, port: ep.hostPort),
+                        appName: project.appName
+                    )
+                }
+            case .secrets(let mode):
+                SecretsEntryView(
+                    project: project,
+                    mode: mode,
+                    onComplete: mode == .launch ? { secrets in
+                        Task { await runtime.launchProject(project, secrets: secrets) }
+                    } : nil
                 )
             }
         }
@@ -150,7 +175,7 @@ struct ProjectDetailView: View {
 
             case .running:
                 Button {
-                    showBrowser = true
+                    activeSheet = .browser
                 } label: {
                     Label("Open", systemImage: "globe")
                 }
@@ -192,11 +217,30 @@ struct ProjectDetailView: View {
     }
 
     private func launchProject() async {
-        logger.info("Launching project: \(project.appName)")
-        await runtime.launchProject(project)
+        let missing = project.capabilities.requiredSecrets.filter {
+            SecretsManager.load(packageId: project.packageCachePath, name: $0) == nil
+        }
+        if missing.isEmpty {
+            let secrets = SecretsManager.loadAll(
+                packageId: project.packageCachePath,
+                names: project.capabilities.declaredSecrets
+            )
+            await runtime.launchProject(project, secrets: secrets)
+        } else {
+            activeSheet = .secrets(.launch)
+        }
     }
 
     // MARK: - Info Sections
+
+    private var secretsSection: some View {
+        GroupBox("Secrets") {
+            Button("Manage Secrets…") {
+                activeSheet = .secrets(.manage)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 
     private var trustSection: some View {
         GroupBox("Trust Status") {
@@ -228,7 +272,7 @@ struct ProjectDetailView: View {
                         value: project.capabilities.exposedPorts.map(String.init).joined(separator: ", ")
                     )
                 }
-                if !project.capabilities.requiredSecrets.isEmpty {
+                if !project.capabilities.secrets.isEmpty {
                     CapabilityRow(
                         icon: "key",
                         label: "Required Secrets",

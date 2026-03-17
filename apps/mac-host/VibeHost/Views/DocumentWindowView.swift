@@ -10,13 +10,18 @@ struct DocumentWindowView: View {
     @Binding var document: VibeAppDocument
     let fileURL: URL?
     @State private var runtime = RuntimeState()
-    @State private var showInfo = false
     @State private var isWebLoading = true
     @State private var webError: String?
     @State private var currentURL: URL?
     @State private var schemeHandler: VibeSchemeHandler?
     @State private var webViewID = UUID()
     @State private var pollingTask: Task<Void, Never>?
+
+    private enum ActiveSheet: Identifiable {
+        case info, secrets
+        var id: String { switch self { case .info: "info"; case .secrets: "secrets" } }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     private var project: Project { document.project }
     private var status: ProjectRunStatus { runtime.status(for: project) }
@@ -27,20 +32,27 @@ struct DocumentWindowView: View {
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        showInfo = true
+                        activeSheet = .info
                     } label: {
                         Image(systemName: "info.circle")
                     }
                 }
             }
-            .sheet(isPresented: $showInfo) {
-                ProjectInfoSheet(
-                    project: project,
-                    runtime: runtime,
-                    fileURL: fileURL,
-                    schemeHandler: $schemeHandler,
-                    webViewID: $webViewID
-                )
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .info:
+                    ProjectInfoSheet(
+                        project: project,
+                        runtime: runtime,
+                        fileURL: fileURL,
+                        schemeHandler: $schemeHandler,
+                        webViewID: $webViewID
+                    )
+                case .secrets:
+                    SecretsEntryView(project: project, mode: .launch) { secrets in
+                        Task { await doLaunch(secrets: secrets) }
+                    }
+                }
             }
             .task {
                 await runtime.checkRuntime()
@@ -132,7 +144,22 @@ struct DocumentWindowView: View {
     // MARK: - Launch
 
     private func launchCurrentProject() async {
-        await runtime.launchProject(project)
+        let missing = project.capabilities.requiredSecrets.filter {
+            SecretsManager.load(packageId: project.packageCachePath, name: $0) == nil
+        }
+        if missing.isEmpty {
+            let secrets = SecretsManager.loadAll(
+                packageId: project.packageCachePath,
+                names: project.capabilities.declaredSecrets
+            )
+            await doLaunch(secrets: secrets)
+        } else {
+            activeSheet = .secrets
+        }
+    }
+
+    private func doLaunch(secrets: [String: String] = [:]) async {
+        await runtime.launchProject(project, secrets: secrets)
         if let ep = runtime.vmEndpoint(for: project) {
             schemeHandler = VibeSchemeHandler(vmIP: ep.vmIP, port: ep.hostPort)
         }
@@ -295,7 +322,7 @@ struct DocumentWindowView: View {
                             .frame(maxWidth: 400)
                     }
                     Button("Retry") {
-                        Task { await runtime.launchProject(project) }
+                        Task { await launchCurrentProject() }
                     }
                     .buttonStyle(.borderedProminent)
                     .padding(.top, 4)
@@ -351,6 +378,8 @@ private struct ProjectInfoSheet: View {
     @Binding var schemeHandler: VibeSchemeHandler?
     @Binding var webViewID: UUID
     @Environment(\.dismiss) private var dismiss
+
+    @State private var showManageSecrets = false
 
     private var status: ProjectRunStatus { runtime.status(for: project) }
     private var stateInfo: (totalBytes: Int, lastSaved: Date?) {
@@ -506,6 +535,31 @@ private struct ProjectInfoSheet: View {
                         .padding(.vertical, 4)
                     }
 
+                    // Secrets
+                    if !project.capabilities.secrets.isEmpty {
+                        GroupBox("Secrets") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(project.capabilities.secrets, id: \.name) { secret in
+                                    HStack {
+                                        Text(secret.name)
+                                            .font(.system(.callout, design: .monospaced))
+                                        Spacer()
+                                        let isSet = SecretsManager.load(
+                                            packageId: project.packageCachePath,
+                                            name: secret.name
+                                        ) != nil
+                                        Label(isSet ? "Set" : "Not set", systemImage: isSet ? "checkmark.circle.fill" : "exclamationmark.circle")
+                                            .font(.caption)
+                                            .foregroundStyle(isSet ? .green : .orange)
+                                    }
+                                }
+                                Divider()
+                                Button("Manage Secrets…") { showManageSecrets = true }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+
                     // Package info
                     GroupBox("Package Info") {
                         VStack(spacing: 6) {
@@ -544,6 +598,9 @@ private struct ProjectInfoSheet: View {
             }
         }
         .frame(minWidth: 420, minHeight: 500)
+        .sheet(isPresented: $showManageSecrets) {
+            SecretsEntryView(project: project, mode: .manage)
+        }
     }
 
     private var statusIndicatorColor: Color {
