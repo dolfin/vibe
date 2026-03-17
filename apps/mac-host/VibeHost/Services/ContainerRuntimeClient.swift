@@ -155,6 +155,27 @@ enum ContainerRuntimeClient {
         }
     }
 
+    /// Remove all containers created by Vibe (label vibe.project=*).
+    /// Called once after VM boot to purge leftovers from crashed/force-quit sessions.
+    static func removeAllVibeContainers() async {
+        guard let (stdout, _, status) = try? await ssh(
+            ["nerdctl", "ps", "-a", "--filter", "label=vibe.project", "--format", "{{.Names}}"]
+        ), status == 0 else { return }
+
+        let names = stdout
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard !names.isEmpty else {
+            logger.info("Stale container cleanup: none found")
+            return
+        }
+        logger.info("Stale container cleanup: removing \(names.count) container(s): \(names.joined(separator: ", "))")
+        for name in names {
+            try? await removeContainer(name: name)
+        }
+    }
+
     // MARK: - Port resolution
 
     static func findAvailablePort(preferred: UInt16) async -> UInt16 {

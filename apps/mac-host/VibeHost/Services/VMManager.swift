@@ -288,6 +288,10 @@ final class VMManager: NSObject {
 
         state = .ready
         logger.info("BENCH vm-ready: VM fully ready in \(String(format: "%.2f", -bootStart.timeIntervalSinceNow))s from boot() call")
+
+        // Purge containers and extracted dirs left behind by crashed/force-quit sessions.
+        await ContainerRuntimeClient.removeAllVibeContainers()
+        cleanupStaleSharedDirs()
     }
 
     private func generateSSHKeyPair() async throws {
@@ -428,6 +432,23 @@ final class VMManager: NSObject {
         let tail = lines.suffix(30)
         logger.notice("=== VM console (last \(tail.count)/\(lines.count) lines) ===")
         for line in tail { logger.notice("[VM] \(line)") }
+    }
+
+    /// Delete leftover `vibe-<tag>` directories in the VM shared dir.
+    /// These are extracted project directories from sessions that ended without cleanup.
+    private func cleanupStaleSharedDirs() {
+        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: sharedDir.path) else { return }
+        var isDir: ObjCBool = false
+        var removed = 0
+        for item in contents where item.hasPrefix("vibe-") {
+            let url = sharedDir.appendingPathComponent(item)
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else { continue }
+            try? FileManager.default.removeItem(at: url)
+            removed += 1
+        }
+        if removed > 0 {
+            logger.info("Stale shared-dir cleanup: removed \(removed) director(ies)")
+        }
     }
 
     func cleanupBridge(port: UInt16) {
