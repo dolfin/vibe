@@ -1,6 +1,23 @@
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 
-const todos = [];
+const DATA_FILE = "/data/todos.json";
+
+function loadTodos() {
+  try {
+    return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+function saveTodos(todos) {
+  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+  fs.writeFileSync(DATA_FILE, JSON.stringify(todos, null, 2));
+}
+
+let todos = loadTodos();
 
 const HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -20,6 +37,8 @@ const HTML = `<!DOCTYPE html>
     .done { text-decoration: line-through; color: #999; }
     .toggle { cursor: pointer; font-size: 1.2rem; }
     .badge { background: #e8f4ff; color: #0066cc; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem; }
+    #status { color: #888; font-size: 0.85rem; margin-bottom: 0.5rem; min-height: 1.2em; }
+    .retry-btn { background: none; color: #0066cc; border: none; padding: 0; font-size: 0.85rem; cursor: pointer; text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -28,30 +47,57 @@ const HTML = `<!DOCTYPE html>
     <input id="input" placeholder="What needs to be done?" autofocus>
     <button type="submit">Add</button>
   </form>
+  <div id="status"></div>
   <ul id="list"></ul>
   <script>
-    async function load() {
-      const res = await fetch("/todos");
-      const todos = await res.json();
-      const list = document.getElementById("list");
-      list.innerHTML = todos.map(t =>
-        '<li class="' + (t.done ? "done" : "") + '">' +
-        '<span class="toggle" onclick="toggle(' + t.id + ')">' + (t.done ? "\\u2611" : "\\u2610") + '</span> ' +
-        t.title + '</li>'
-      ).join("");
+    var loadRetryTimer = null;
+
+    function setStatus(msg, showRetry) {
+      var s = document.getElementById("status");
+      s.innerHTML = msg ? (msg + (showRetry ? ' <button class="retry-btn" onclick="load()">Retry</button>' : "")) : "";
     }
+
+    async function load() {
+      if (loadRetryTimer) { clearTimeout(loadRetryTimer); loadRetryTimer = null; }
+      try {
+        const res = await fetch("/todos");
+        if (!res.ok) throw new Error("Server error " + res.status);
+        const todos = await res.json();
+        const list = document.getElementById("list");
+        list.innerHTML = todos.map(t =>
+          '<li class="' + (t.done ? "done" : "") + '">' +
+          '<span class="toggle" onclick="toggle(' + t.id + ')">' + (t.done ? "\\u2611" : "\\u2610") + '</span> ' +
+          t.title + '</li>'
+        ).join("");
+        setStatus("");
+      } catch (e) {
+        setStatus("Connecting\u2026", false);
+        loadRetryTimer = setTimeout(load, 1500);
+      }
+    }
+
     async function addTodo(e) {
       e.preventDefault();
       const input = document.getElementById("input");
       if (!input.value.trim()) return;
-      await fetch("/todos", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({title: input.value.trim()}) });
-      input.value = "";
-      load();
+      try {
+        await fetch("/todos", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({title: input.value.trim()}) });
+        input.value = "";
+        load();
+      } catch (e) {
+        setStatus("Could not save \u2014 server unavailable.", true);
+      }
     }
+
     async function toggle(id) {
-      await fetch("/todos/" + id + "/toggle", { method: "PATCH" });
-      load();
+      try {
+        await fetch("/todos/" + id + "/toggle", { method: "PATCH" });
+        load();
+      } catch (e) {
+        setStatus("Could not update \u2014 server unavailable.", true);
+      }
     }
+
     load();
   </script>
 </body>
@@ -72,6 +118,7 @@ const server = http.createServer((req, res) => {
       todo.id = todos.length + 1;
       todo.done = false;
       todos.push(todo);
+      saveTodos(todos);
       res.setHeader("Content-Type", "application/json");
       res.statusCode = 201;
       res.end(JSON.stringify(todo));
@@ -81,6 +128,7 @@ const server = http.createServer((req, res) => {
     const todo = todos.find((t) => t.id === id);
     if (todo) {
       todo.done = !todo.done;
+      saveTodos(todos);
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify(todo));
     } else {

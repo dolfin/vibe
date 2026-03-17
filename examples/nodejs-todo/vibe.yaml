@@ -10,6 +10,13 @@ services:
     command: ["node", "server.js"]
     ports:
       - container: 3000
+    mounts:
+      - source: data
+        target: /data
+
+state:
+  volumes:
+    - name: data
 
 security:
   network: true

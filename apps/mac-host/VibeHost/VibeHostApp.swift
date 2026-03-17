@@ -23,9 +23,11 @@ struct VibeHostApp: App {
     }
 
     var body: some Scene {
-        // Primary: each .vibeapp file gets its own window
-        DocumentGroup(viewing: VibeAppDocument.self) { file in
-            DocumentWindowView(document: file.document)
+        // Primary: each .vibeapp file gets its own window.
+        // newDocument:editor: grants the app full read-write file coordination so
+        // the Save action can update rawPackageData and macOS writes it to disk.
+        DocumentGroup(newDocument: VibeAppDocument()) { file in
+            DocumentWindowView(document: file.$document, fileURL: file.fileURL)
         }
         .commands {
             DeveloperCommands()

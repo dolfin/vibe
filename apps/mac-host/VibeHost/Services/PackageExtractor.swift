@@ -16,6 +16,8 @@ enum PackageExtractor {
         case missingAppManifest
         case invalidPackageManifest(String)
         case invalidAppManifest(String)
+        case tarExtractionFailed(String)
+        case rebuildFailed
 
         var errorDescription: String? {
             switch self {
@@ -23,6 +25,8 @@ enum PackageExtractor {
             case .missingAppManifest: "Package is missing _vibe_app_manifest.json"
             case .invalidPackageManifest(let detail): "Failed to parse _vibe_package_manifest.json: \(detail)"
             case .invalidAppManifest(let detail): "Failed to parse _vibe_app_manifest.json: \(detail)"
+            case .tarExtractionFailed(let vol): "Failed to extract state tarball for volume '\(vol)'"
+            case .rebuildFailed: "Failed to rebuild package archive"
             }
         }
     }
@@ -126,5 +130,109 @@ enum PackageExtractor {
             fileData.append(chunk)
         }
         return fileData
+    }
+
+    // MARK: - State extraction
+
+    /// Pull out `_vibe_state/<vol>.tar.gz` entries; returns `volName → tarData`.
+    static func extractStateEntries(from data: Data) -> [String: Data] {
+        extractPrefixedEntries(from: data, prefix: "_vibe_state/")
+    }
+
+    /// Pull out `_vibe_initial_state/<vol>.tar.gz` entries; returns `volName → tarData`.
+    static func extractInitialStateEntries(from data: Data) -> [String: Data] {
+        extractPrefixedEntries(from: data, prefix: "_vibe_initial_state/")
+    }
+
+    /// Untar each state entry into `extractDir/<volName>/`.
+    static func extractStateTarballs(_ entries: [String: Data], to extractDir: URL) throws {
+        let fm = FileManager.default
+        for (volName, tarData) in entries {
+            let volDir = extractDir.appendingPathComponent(volName, isDirectory: true)
+            try fm.createDirectory(at: volDir, withIntermediateDirectories: true)
+
+            // Write tar.gz to a temp file, then extract via system tar
+            let tmpURL = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".tar.gz")
+            defer { try? fm.removeItem(at: tmpURL) }
+            try tarData.write(to: tmpURL)
+
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+            proc.arguments = ["-xzf", tmpURL.path, "-C", volDir.path]
+            proc.standardError = Pipe()
+            try proc.run()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0 else {
+                throw ExtractionError.tarExtractionFailed(volName)
+            }
+        }
+    }
+
+    // MARK: - ZIP rebuild
+
+    /// Rebuild the ZIP: copy all base entries (skipping old `_vibe_state/*`), then
+    /// append new `_vibe_state/<vol>.tar.gz` entries. Returns new archive bytes.
+    static func rebuildWithState(baseData: Data, stateEntries: [String: Data]) throws -> Data {
+        let source = try Archive(data: baseData, accessMode: .read, pathEncoding: nil)
+        let dest = try Archive(data: Data(), accessMode: .create, pathEncoding: nil)
+
+        for entry in source {
+            if entry.path.hasPrefix("_vibe_state/") { continue }
+            var entryData = Data()
+            _ = try source.extract(entry) { chunk in entryData.append(chunk) }
+            if entry.type == .directory {
+                try dest.addEntry(with: entry.path, type: .directory, uncompressedSize: 0 as Int64,
+                                  compressionMethod: .none, provider: { _, _ in Data() })
+            } else {
+                let size = Int64(entryData.count)
+                let captured = entryData
+                try dest.addEntry(with: entry.path, type: .file, uncompressedSize: size,
+                                  compressionMethod: .deflate,
+                                  provider: { pos, chunkSize in
+                    let start = Int(pos)
+                    guard start < captured.count else { return Data() }
+                    return Data(captured[start..<min(start + chunkSize, captured.count)])
+                })
+            }
+        }
+
+        for (volName, tarData) in stateEntries.sorted(by: { $0.key < $1.key }) {
+            let size = Int64(tarData.count)
+            let captured = tarData
+            try dest.addEntry(with: "_vibe_state/\(volName).tar.gz", type: .file,
+                              uncompressedSize: size, compressionMethod: .deflate,
+                              provider: { pos, chunkSize in
+                let start = Int(pos)
+                guard start < captured.count else { return Data() }
+                return Data(captured[start..<min(start + chunkSize, captured.count)])
+            })
+        }
+
+        guard let resultData = dest.data else {
+            throw ExtractionError.rebuildFailed
+        }
+        return resultData
+    }
+
+    // MARK: - Private helpers
+
+    private static func extractPrefixedEntries(from data: Data, prefix: String) -> [String: Data] {
+        guard let archive = try? Archive(data: data, accessMode: .read, pathEncoding: nil) else {
+            return [:]
+        }
+        var result: [String: Data] = [:]
+        for entry in archive where entry.path.hasPrefix(prefix) && entry.type == .file {
+            let filename = String(entry.path.dropFirst(prefix.count))
+            // Strip both extensions from "mydb.tar.gz" → "mydb"
+            let volName = URL(fileURLWithPath: filename)
+                .deletingPathExtension()
+                .deletingPathExtension()
+                .lastPathComponent
+            guard !volName.isEmpty else { continue }
+            var entryData = Data()
+            _ = try? archive.extract(entry) { chunk in entryData.append(chunk) }
+            result[volName] = entryData
+        }
+        return result
     }
 }

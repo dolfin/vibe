@@ -3,6 +3,7 @@ pub mod init;
 pub mod inspect;
 pub mod keygen;
 pub mod package;
+pub mod revert;
 pub mod sign;
 pub mod validate;
 pub mod verify;

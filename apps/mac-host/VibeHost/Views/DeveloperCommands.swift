@@ -2,6 +2,8 @@ import SwiftUI
 import AppKit
 
 struct DeveloperCommands: Commands {
+    @FocusedValue(\.vibeDocumentContext) private var documentContext: VibeDocumentContext?
+
     var body: some Commands {
         CommandMenu("Developer") {
             Button("Clear Caches…") {
@@ -16,7 +18,26 @@ struct DeveloperCommands: Commands {
                     await VMManager.shared.clearCaches()
                 }
             }
+
             Divider()
+
+            Button("Revert to Original State…") {
+                Task { @MainActor in
+                    let alert = NSAlert()
+                    alert.messageText = "Revert to Original State?"
+                    alert.informativeText = "This removes all saved state for this app. The next time you open the app, it will start fresh (or from seeded initial state if present)."
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "Revert")
+                    alert.addButton(withTitle: "Cancel")
+                    guard alert.runModal() == .alertFirstButtonReturn else { return }
+                    guard let ctx = documentContext else { return }
+                    await ctx.revert()
+                }
+            }
+            .disabled(documentContext == nil)
+
+            Divider()
+
             Button("Open VM Console Log") {
                 NSWorkspace.shared.open(VMManager.shared.consoleLogURL)
             }

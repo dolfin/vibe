@@ -26,6 +26,10 @@ enum Commands {
         manifest: PathBuf,
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Directory of pre-populated seed data to embed as initial state.
+        /// Each subdirectory becomes a signed _vibe_initial_state/<name>.tar.gz entry.
+        #[arg(long)]
+        seed_data: Option<PathBuf>,
     },
     /// Sign a .vibeapp package
     Sign {
@@ -48,6 +52,8 @@ enum Commands {
     ImportCompose,
     /// Inspect a .vibeapp package
     Inspect { package: PathBuf },
+    /// Strip saved user state (_vibe_state/*) from a .vibeapp, restoring original signed content
+    Revert { package: PathBuf },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -56,13 +62,16 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Init { name } => commands::init::run(&name),
         Commands::Validate { manifest } => commands::validate::run(&manifest),
-        Commands::Package { manifest, output } => {
-            commands::package::run(&manifest, output.as_deref())
-        }
+        Commands::Package {
+            manifest,
+            output,
+            seed_data,
+        } => commands::package::run(&manifest, output.as_deref(), seed_data.as_deref()),
         Commands::Keygen { output } => commands::keygen::run(&output),
         Commands::Sign { package, key } => commands::sign::run(&package, &key),
         Commands::Verify { package, key } => commands::verify::run(&package, &key),
         Commands::ImportCompose => commands::import_compose::run(),
         Commands::Inspect { package } => commands::inspect::run(&package),
+        Commands::Revert { package } => commands::revert::run(&package),
     }
 }

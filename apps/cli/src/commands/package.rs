@@ -23,7 +23,7 @@ struct PackageManifest {
     files: BTreeMap<String, String>,
 }
 
-pub fn run(manifest_path: &Path, output: Option<&Path>) -> Result<()> {
+pub fn run(manifest_path: &Path, output: Option<&Path>, seed_data: Option<&Path>) -> Result<()> {
     println!(
         "Packaging from {}...",
         manifest_path.display().to_string().cyan()
@@ -71,7 +71,56 @@ pub fn run(manifest_path: &Path, output: Option<&Path>) -> Result<()> {
         app_manifest_json.into_bytes(),
     );
 
-    // Re-hash with the new file included
+    // Embed seed data as _vibe_initial_state/<name>.tar.gz if provided.
+    // These entries are included in the signed manifest so they cannot be tampered with.
+    if let Some(seed_dir) = seed_data {
+        let seed_dir = seed_dir
+            .canonicalize()
+            .with_context(|| format!("Failed to resolve seed-data directory '{}'", seed_dir.display()))?;
+
+        let read_dir = fs::read_dir(&seed_dir)
+            .with_context(|| format!("Failed to read seed-data directory '{}'", seed_dir.display()))?;
+
+        for entry in read_dir {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .context("Invalid seed data directory name")?
+                .to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+
+            println!("  {} Seeding initial state for '{}'", "+".cyan(), name);
+
+            // Create tar.gz of this volume directory using the system tar binary
+            let tar_output = std::process::Command::new("tar")
+                .args([
+                    "-czf",
+                    "-",
+                    "-C",
+                    path.to_str().context("Non-UTF-8 path in seed data directory")?,
+                    ".",
+                ])
+                .output()
+                .with_context(|| format!("Failed to run tar for seed directory '{}'", name))?;
+
+            if !tar_output.status.success() {
+                let stderr = String::from_utf8_lossy(&tar_output.stderr);
+                anyhow::bail!("tar failed for seed directory '{}': {}", name, stderr);
+            }
+
+            let tar_key = format!("_vibe_initial_state/{}.tar.gz", name);
+            file_entries.insert(tar_key, tar_output.stdout);
+        }
+    }
+
+    // Re-hash with the new files included
     let mut file_digests: BTreeMap<String, String> = BTreeMap::new();
     for (rel_path, contents) in &file_entries {
         let mut hasher = Sha256::new();

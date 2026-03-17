@@ -129,6 +129,31 @@ final class RuntimeState {
     func statusMessage(for project: Project) -> String? {
         statusMessages[project.id]
     }
+
+    /// Snapshot all declared state volumes for a running project.
+    func snapshotState(_ project: Project) async throws -> [String: Data] {
+        try await lifecycle(for: project).snapshotState(projectId: project.id)
+    }
+
+    /// Stop all currently running projects (used when the document is replaced
+    /// by a version restore so the old containers don't keep running).
+    func stopAllProjects() async {
+        let snapshot = lifecycles
+        for (id, mgr) in snapshot {
+            statuses[id] = .stopping
+            await mgr.unexpose(projectId: id)
+            _ = try? await mgr.stop(projectId: id)
+            statuses[id] = .stopped
+            hostPorts[id] = nil
+            vmEndpoints[id] = nil
+        }
+        lifecycles.removeAll()
+    }
+
+    /// Returns host-side URLs for all declared state volume directories.
+    func volumeDirectories(for project: Project) async -> [URL] {
+        await lifecycle(for: project).volumeDirectories(projectId: project.id)
+    }
 }
 
 enum ProjectRunStatus {

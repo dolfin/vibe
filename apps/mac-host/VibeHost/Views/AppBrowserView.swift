@@ -91,6 +91,18 @@ struct AppBrowserView: View {
     }
 }
 
+// MARK: - WKWebView subclass with isolated undo manager
+//
+// WKWebView registers undo actions for every keystroke and propagates them
+// through the responder chain, reaching the NSDocument that backs SwiftUI's
+// FileDocument. This makes the document appear "Edited" whenever the user
+// types in a web form — even if nothing was written to the container volume.
+// Overriding undoManager with a private instance breaks that chain.
+private final class VibeWebView: WKWebView {
+    private let isolatedUndoManager = UndoManager()
+    override var undoManager: UndoManager? { isolatedUndoManager }
+}
+
 /// NSViewRepresentable wrapping WKWebView.
 struct WebView: NSViewRepresentable {
     let url: URL
@@ -101,12 +113,15 @@ struct WebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        // Use a non-persistent data store so reopening a document never serves
+        // cached content from a previous session.
+        config.websiteDataStore = .nonPersistent()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
         if let handler = schemeHandler {
             config.setURLSchemeHandler(handler, forURLScheme: "vibe-app")
         }
 
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = VibeWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         context.coordinator.initialURL = url
         webView.load(URLRequest(url: url))
@@ -120,6 +135,17 @@ struct WebView: NSViewRepresentable {
             context.coordinator.retryCount = 0
             webView.load(URLRequest(url: url))
         }
+    }
+
+    /// Called by SwiftUI when this view is removed from the hierarchy (e.g. when
+    /// webViewID changes and forces a new WKWebView to be created). Nil-ing the
+    /// navigation delegate stops any in-flight or pending callbacks from the old
+    /// WKWebView from firing on the shared isLoading binding after the new one
+    /// has already finished loading — which was causing isWebLoading to get stuck
+    /// at true, blocking all pointer events via the ProgressView overlay.
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        nsView.stopLoading()
+        nsView.navigationDelegate = nil
     }
 
     func makeCoordinator() -> Coordinator {

@@ -14,6 +14,10 @@ actor ProjectLifecycleManager {
         var vmProjectPath: String
         /// NAT IP of the VM (set after start()).
         var vmIP: String = ""
+        /// App manifest — used by snapshotState() to look up volume names.
+        let appManifest: AppManifest
+        /// Host-side directory where app files (and state volumes) were extracted.
+        let extractDir: URL
     }
 
     struct ServiceRunState {
@@ -79,6 +83,19 @@ actor ProjectLifecycleManager {
         try PackageExtractor.extractAppFiles(from: packageData, to: extractDir)
         logger.info("BENCH prepare[\(projectTag)]: extraction done in \(String(format: "%.2f", -extractStart.timeIntervalSinceNow))s → \(extractDir.path)")
 
+        // Restore saved state (or seed from initial state if no saved state yet)
+        let savedState = StorageManager.loadState(for: project.packageCachePath)
+        if !savedState.isEmpty {
+            try PackageExtractor.extractStateTarballs(savedState, to: extractDir)
+            logger.info("prepare[\(projectTag)]: restored \(savedState.count) saved state volume(s)")
+        } else {
+            let initialState = PackageExtractor.extractInitialStateEntries(from: packageData)
+            if !initialState.isEmpty {
+                try PackageExtractor.extractStateTarballs(initialState, to: extractDir)
+                logger.info("prepare[\(projectTag)]: seeded \(initialState.count) initial state volume(s)")
+            }
+        }
+
         // Inside the VM, the shared dir is mounted at /vibe-shared
         let vmProjectPath = "/vibe-shared/vibe-\(projectTag)"
 
@@ -126,7 +143,9 @@ actor ProjectLifecycleManager {
             projectId: "vibe-\(projectTag)",
             status: .stopped,
             services: services,
-            vmProjectPath: vmProjectPath
+            vmProjectPath: vmProjectPath,
+            appManifest: pkg.appManifest,
+            extractDir: extractDir
         )
 
         states[project.id] = state
@@ -202,10 +221,47 @@ actor ProjectLifecycleManager {
         }
         state.status = .running
         states[projectId] = state
+
+        // Wait until services are actually accepting connections before reporting ready.
+        // The container runtime returns as soon as the container starts — the application
+        // inside may take additional time to bind to its port.
+        await waitForServices(state: state)
+
         logger.info("BENCH start[\(state.projectId)]: all containers running in \(String(format: "%.2f", -startTime.timeIntervalSinceNow))s")
         logger.info("Project started: \(state.projectId) with \(state.services.count) services")
 
         return state
+    }
+
+    /// Poll each service port until it accepts connections or the timeout elapses.
+    private func waitForServices(state: ManagedState, maxWaitSeconds: Double = 30) async {
+        let deadline = Date().addingTimeInterval(maxWaitSeconds)
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+
+        var pending = state.services.filter { $0.containerPort > 0 }
+        guard !pending.isEmpty else { return }
+
+        while !pending.isEmpty, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(300))
+            var stillWaiting: [ServiceRunState] = []
+            for svc in pending {
+                let urlStr = "http://\(state.vmIP):\(svc.containerPort)/"
+                guard let url = URL(string: urlStr) else { continue }
+                var req = URLRequest(url: url, timeoutInterval: 0.5)
+                req.httpMethod = "HEAD"
+                if let _ = try? await session.data(for: req) {
+                    logger.info("start[\(state.projectId)]: \(svc.name) ready on :\(svc.containerPort)")
+                } else {
+                    stillWaiting.append(svc)
+                }
+            }
+            pending = stillWaiting
+        }
+
+        if !pending.isEmpty {
+            logger.warning("start[\(state.projectId)]: timed out waiting for \(pending.map(\.name).joined(separator: ", "))")
+        }
     }
 
     /// Stop all containers for a project.
@@ -258,6 +314,26 @@ actor ProjectLifecycleManager {
         logger.info("Unexposed \(state.projectId)")
     }
 
+    /// Snapshot all state volumes as tarballs. Returns `volName → tar.gz bytes`.
+    /// Returns empty dict if no volumes are declared in the manifest.
+    func snapshotState(projectId: UUID) async throws -> [String: Data] {
+        guard let state = states[projectId] else { return [:] }
+        let volumeNames = Set((state.appManifest.state?.volumes ?? []).map { $0.name })
+        guard !volumeNames.isEmpty else { return [:] }
+
+        var result: [String: Data] = [:]
+        var snapshotted = Set<String>()
+
+        for svc in state.services {
+            for m in svc.mounts where volumeNames.contains(m.source) && !snapshotted.contains(m.source) {
+                let hostDir = state.extractDir.appendingPathComponent(m.source)
+                result[m.source] = try await createTarball(of: hostDir)
+                snapshotted.insert(m.source)
+            }
+        }
+        return result
+    }
+
     /// Returns (vmIP, containerPort, hostPort) for the primary service after start().
     func vmEndpoint(for projectId: UUID) -> (vmIP: String, containerPort: UInt16, hostPort: UInt16)? {
         guard let state = states[projectId],
@@ -271,5 +347,39 @@ actor ProjectLifecycleManager {
 
     func status(for projectId: UUID) -> RunStatus {
         states[projectId]?.status ?? .stopped
+    }
+
+    /// Returns host-side URLs for all declared state volume directories.
+    func volumeDirectories(projectId: UUID) -> [URL] {
+        guard let state = states[projectId] else { return [] }
+        let volumeNames = Set((state.appManifest.state?.volumes ?? []).map { $0.name })
+        guard !volumeNames.isEmpty else { return [] }
+        var result: [URL] = []
+        var seen = Set<String>()
+        for svc in state.services {
+            for m in svc.mounts where volumeNames.contains(m.source) && !seen.contains(m.source) {
+                result.append(state.extractDir.appendingPathComponent(m.source))
+                seen.insert(m.source)
+            }
+        }
+        return result
+    }
+
+    // MARK: - Private helpers
+
+    private func createTarball(of dir: URL) async throws -> Data {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        proc.arguments = ["-czf", "-", "-C", dir.path, "."]
+        let outPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = Pipe()
+        try proc.run()
+        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        guard proc.terminationStatus == 0 else {
+            throw DockerError.commandFailed("tar snapshot failed (status \(proc.terminationStatus)) for \(dir.lastPathComponent)")
+        }
+        return data
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import ZIPFoundation
 import os
 
 private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "Storage")
@@ -26,26 +27,130 @@ enum StorageManager {
         try? fm.createDirectory(at: packageCacheDir, withIntermediateDirectories: true)
     }
 
-    /// Cache a package's archive data under its SHA-256 hash.
+    /// Cache a package's archive data under a stable key derived from `_vibe_package_manifest.json`.
+    ///
+    /// The package manifest is in the signed section and never changes, so the cache key is
+    /// identical before and after user saves (which only add `_vibe_state/*` entries).
+    /// The cached archive is the state-stripped version used as base in `rebuildWithState`.
+    ///
     /// Returns the cache key (hash hex) used to look up the package later.
     static func cachePackage(data: Data) throws -> String {
         ensureDirectories()
-        let hash = SHA256.hash(data: data)
+
+        // Derive hash from the signed _vibe_package_manifest.json — stable across saves.
+        let hashInput = manifestData(from: data) ?? data
+        let hash = SHA256.hash(data: hashInput)
         let hashHex = hash.map { String(format: "%02x", $0) }.joined()
         let cacheDir = packageCacheDir.appendingPathComponent(hashHex, isDirectory: true)
         let archivePath = cacheDir.appendingPathComponent("package.vibeapp")
 
         let fm = FileManager.default
-        // Check the FILE (not just the directory) to avoid leaving an empty dir
-        // from a previously interrupted write.
         if !fm.fileExists(atPath: archivePath.path) {
+            // Cache the state-stripped bytes so rebuildWithState always starts from a clean base.
+            let strippedData = (try? stripStateEntries(from: data)) ?? data
             try fm.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-            try data.write(to: archivePath)
+            try strippedData.write(to: archivePath)
             logger.info("Cached package: \(archivePath.path)")
         }
 
         return hashHex
     }
+
+    /// Returns the directory where per-package user state tarballs are stored.
+    /// Path: `package-cache/<hash>/state/`
+    static func stateDir(for packageHash: String) -> URL {
+        packageCacheDir
+            .appendingPathComponent(packageHash, isDirectory: true)
+            .appendingPathComponent("state", isDirectory: true)
+    }
+
+    /// Persist state tarballs (`volName → tar.gz bytes`) for a package hash.
+    static func saveState(_ entries: [String: Data], for hash: String) {
+        let dir = stateDir(for: hash)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for (vol, tarData) in entries {
+            let url = dir.appendingPathComponent("\(vol).tar.gz")
+            try? tarData.write(to: url, options: .atomic)
+        }
+        logger.info("Saved state for \(hash): \(entries.keys.sorted().joined(separator: ", "))")
+    }
+
+    /// Load all saved state tarballs for a package hash. Returns empty dict if none.
+    static func loadState(for hash: String) -> [String: Data] {
+        let dir = stateDir(for: hash)
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil
+        ) else { return [:] }
+        var result: [String: Data] = [:]
+        for url in items where url.pathExtension == "gz" {
+            // file is "<vol>.tar.gz"; strip both extensions to get volume name
+            let volName = url.deletingPathExtension().deletingPathExtension().lastPathComponent
+            guard !volName.isEmpty else { continue }
+            if let data = try? Data(contentsOf: url) {
+                result[volName] = data
+            }
+        }
+        return result
+    }
+
+    // MARK: - Private helpers
+
+    /// Read `_vibe_package_manifest.json` bytes from the archive — used as stable hash input.
+    private static func manifestData(from data: Data) -> Data? {
+        guard let archive = try? Archive(data: data, accessMode: .read, pathEncoding: nil),
+              let entry = archive["_vibe_package_manifest.json"] else { return nil }
+        var result = Data()
+        _ = try? archive.extract(entry) { chunk in result.append(chunk) }
+        return result.isEmpty ? nil : result
+    }
+
+    /// Rebuild the ZIP in-memory with all `_vibe_state/*` entries removed.
+    private static func stripStateEntries(from data: Data) throws -> Data {
+        let source = try Archive(data: data, accessMode: .read, pathEncoding: nil)
+        let dest = try Archive(data: Data(), accessMode: .create, pathEncoding: nil)
+        for entry in source {
+            guard !entry.path.hasPrefix("_vibe_state/") else { continue }
+            var entryData = Data()
+            _ = try source.extract(entry) { chunk in entryData.append(chunk) }
+            if entry.type == .directory {
+                try dest.addEntry(with: entry.path, type: .directory, uncompressedSize: 0 as Int64,
+                                  compressionMethod: .none, provider: { _, _ in Data() })
+            } else {
+                let size = Int64(entryData.count)
+                let captured = entryData
+                try dest.addEntry(with: entry.path, type: .file, uncompressedSize: size,
+                                  compressionMethod: .deflate,
+                                  provider: { pos, chunkSize in
+                    let start = Int(pos)
+                    guard start < captured.count else { return Data() }
+                    return Data(captured[start..<min(start + chunkSize, captured.count)])
+                })
+            }
+        }
+        return dest.data ?? data
+    }
+
+    /// Returns the total size and last modification date of saved state for a package hash.
+    static func stateInfo(for packageHash: String) -> (totalBytes: Int, lastSaved: Date?) {
+        let dir = stateDir(for: packageHash)
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey]
+        ) else { return (0, nil) }
+        var total = 0
+        var latest: Date?
+        for url in items where url.pathExtension == "gz" {
+            if let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) {
+                total += values.fileSize ?? 0
+                if let date = values.contentModificationDate {
+                    if latest == nil || date > latest! { latest = date }
+                }
+            }
+        }
+        return (total, latest)
+    }
+
+    // MARK: - Project persistence
 
     /// Load projects from disk.
     static func loadProjects() -> [Project] {

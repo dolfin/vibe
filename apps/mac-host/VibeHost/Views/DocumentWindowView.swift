@@ -1,10 +1,14 @@
 import SwiftUI
 import AppKit
+import os
+
+private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "DocumentWindow")
 
 /// Per-document window: WebKit fills the window, auto-launches on open.
 /// An (i) toolbar button opens a sheet with all technical details.
 struct DocumentWindowView: View {
-    let document: VibeAppDocument
+    @Binding var document: VibeAppDocument
+    let fileURL: URL?
     @State private var runtime = RuntimeState()
     @State private var showInfo = false
     @State private var isWebLoading = true
@@ -12,6 +16,7 @@ struct DocumentWindowView: View {
     @State private var currentURL: URL?
     @State private var schemeHandler: VibeSchemeHandler?
     @State private var webViewID = UUID()
+    @State private var pollingTask: Task<Void, Never>?
 
     private var project: Project { document.project }
     private var status: ProjectRunStatus { runtime.status(for: project) }
@@ -32,23 +37,41 @@ struct DocumentWindowView: View {
                 ProjectInfoSheet(
                     project: project,
                     runtime: runtime,
+                    fileURL: fileURL,
                     schemeHandler: $schemeHandler,
                     webViewID: $webViewID
                 )
             }
             .task {
                 await runtime.checkRuntime()
-                await runtime.launchProject(project)
-                if let ep = runtime.vmEndpoint(for: project) {
-                    schemeHandler = VibeSchemeHandler(vmIP: ep.vmIP, containerPort: ep.containerPort)
-                    webViewID = UUID()
+                await launchCurrentProject()
+            }
+            // When macOS restores a previous version (File > Revert To > Browse All Versions),
+            // VibeAppDocument.init(configuration:) is called with the old file, producing a
+            // new project with a fresh UUID. Detect this and restart the containers so the
+            // app reflects the restored state instead of continuing to run (and auto-save)
+            // the newer state on top of the restore.
+            .onChange(of: project.id) { _, _ in
+                Task {
+                    pollingTask?.cancel()
+                    pollingTask = nil
+                    schemeHandler = nil
+                    await runtime.stopAllProjects()
+                    await launchCurrentProject()
                 }
             }
             .onDisappear {
+                pollingTask?.cancel()
+                pollingTask = nil
                 let p = project; let rt = runtime
                 Task { await rt.stopProject(p) }
             }
             .frame(minWidth: 800, minHeight: 600)
+            .focusedValue(\.vibeDocumentContext, VibeDocumentContext(
+                project: project,
+                fileURL: fileURL,
+                revert: { await revertAction() }
+            ))
     }
 
     // MARK: - Content
@@ -97,6 +120,111 @@ struct DocumentWindowView: View {
         } else {
             launchingOverlay
         }
+    }
+
+    // MARK: - Launch
+
+    private func launchCurrentProject() async {
+        await runtime.launchProject(project)
+        if let ep = runtime.vmEndpoint(for: project) {
+            schemeHandler = VibeSchemeHandler(vmIP: ep.vmIP, containerPort: ep.containerPort)
+        }
+        startVolumePolling()
+    }
+
+    // MARK: - Volume polling
+
+    private func startVolumePolling() {
+        pollingTask?.cancel()
+        pollingTask = Task {
+            var lastModDates: [URL: Date] = [:]
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { break }
+                guard status == .running, !project.packageCachePath.isEmpty else { continue }
+
+                let volDirs = await runtime.volumeDirectories(for: project)
+                guard !volDirs.isEmpty else { continue }
+
+                var changed = false
+                for dir in volDirs {
+                    let modDate = latestModDate(in: dir)
+                    if let mod = modDate {
+                        if let last = lastModDates[dir] {
+                            if mod > last { changed = true }
+                        }
+                        lastModDates[dir] = mod
+                    }
+                }
+
+                guard changed else { continue }
+
+                do {
+                    let entries = try await runtime.snapshotState(project)
+                    guard !entries.isEmpty else { continue }
+
+                    StorageManager.saveState(entries, for: project.packageCachePath)
+
+                    let cacheURL = StorageManager.packageCacheDir
+                        .appendingPathComponent(project.packageCachePath)
+                        .appendingPathComponent("package.vibeapp")
+                    let baseData = try Data(contentsOf: cacheURL)
+                    let newData = try PackageExtractor.rebuildWithState(baseData: baseData, stateEntries: entries)
+
+                    await MainActor.run {
+                        document.rawPackageData = newData
+                    }
+                    logger.info("Auto-snapshot: marked document as Edited (\(entries.count) volume(s))")
+                } catch {
+                    logger.warning("Auto-snapshot failed: \(String(describing: error))")
+                }
+            }
+        }
+    }
+
+    private func latestModDate(in dir: URL) -> Date? {
+        var latest: Date?
+        guard let enumerator = FileManager.default.enumerator(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+        for case let url as URL in enumerator {
+            if let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+               let date = values.contentModificationDate {
+                if latest == nil || date > latest! { latest = date }
+            }
+        }
+        return latest
+    }
+
+    // MARK: - Revert
+
+    private func revertAction() async {
+        guard !project.packageCachePath.isEmpty else { return }
+
+        // Stop polling so we don't snapshot stale state during the restart.
+        pollingTask?.cancel()
+        pollingTask = nil
+
+        // Drop saved state from cache so the re-launch starts clean.
+        let stateDir = StorageManager.stateDir(for: project.packageCachePath)
+        try? FileManager.default.removeItem(at: stateDir)
+
+        // Write the clean (state-free) cached package back to disk.
+        let cacheURL = StorageManager.packageCacheDir
+            .appendingPathComponent(project.packageCachePath)
+            .appendingPathComponent("package.vibeapp")
+        guard let cleanData = try? Data(contentsOf: cacheURL) else { return }
+        document.rawPackageData = cleanData
+        NSApp.sendAction(Selector(("saveDocument:")), to: nil, from: nil)
+
+        // Reset the UI to the launching state, restart the containers with clean
+        // state, then bring the WebView back up with the reverted content.
+        schemeHandler = nil
+        await runtime.stopProject(project)
+        await launchCurrentProject()
+        logger.info("Reverted to original state and reloaded")
     }
 
     // MARK: - Overlays
@@ -195,11 +323,15 @@ struct DocumentWindowView: View {
 private struct ProjectInfoSheet: View {
     let project: Project
     let runtime: RuntimeState
+    let fileURL: URL?
     @Binding var schemeHandler: VibeSchemeHandler?
     @Binding var webViewID: UUID
     @Environment(\.dismiss) private var dismiss
 
     private var status: ProjectRunStatus { runtime.status(for: project) }
+    private var stateInfo: (totalBytes: Int, lastSaved: Date?) {
+        StorageManager.stateInfo(for: project.packageCachePath)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -287,6 +419,27 @@ private struct ProjectInfoSheet: View {
                                 .padding(.top, 2)
                             }
                         }
+                    }
+
+                    // Saved Data
+                    GroupBox("Saved Data") {
+                        VStack(spacing: 6) {
+                            let info = stateInfo
+                            if info.totalBytes > 0 || info.lastSaved != nil {
+                                infoRow("Size", formatBytes(info.totalBytes))
+                                infoRow(
+                                    "Last Saved",
+                                    info.lastSaved.map {
+                                        $0.formatted(date: .abbreviated, time: .shortened)
+                                    } ?? "—"
+                                )
+                            } else {
+                                Text("No saved data")
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(.vertical, 4)
                     }
 
                     // Trust
@@ -394,5 +547,31 @@ private struct ProjectInfoSheet: View {
             Spacer()
             Text(value).font(.system(.body, design: .monospaced))
         }
+    }
+
+    private func formatBytes(_ bytes: Int) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(bytes))
+    }
+}
+
+// MARK: - Focused value for DeveloperCommands
+
+struct VibeDocumentContext {
+    let project: Project
+    let fileURL: URL?
+    let revert: () async -> Void
+}
+
+struct VibeDocumentContextKey: FocusedValueKey {
+    typealias Value = VibeDocumentContext
+}
+
+extension FocusedValues {
+    var vibeDocumentContext: VibeDocumentContext? {
+        get { self[VibeDocumentContextKey.self] }
+        set { self[VibeDocumentContextKey.self] = newValue }
     }
 }
