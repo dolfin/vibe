@@ -9,6 +9,7 @@ extension UTType {
 
 @main
 struct VibeHostApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var projectStore = ProjectStore()
     @State private var vaultStore = VaultStore()
     @State private var libraryRuntime = RuntimeState()
@@ -185,4 +186,58 @@ private struct VMStatusBar: View {
 // Make URL conform to Identifiable for .sheet(item:)
 extension URL: @retroactive Identifiable {
     public var id: String { absoluteString }
+}
+
+// MARK: - App Delegate
+
+/// Manages the Developer menu's Option-key visibility.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Defer until SwiftUI has finished populating NSApp.mainMenu.
+        DispatchQueue.main.async {
+            self.developerMenuItem?.isHidden = true
+        }
+        installMonitors()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // Re-evaluate in case Option was already held when the app came to front.
+        updateVisibility()
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        // Always hide when the app loses focus so it isn't left visible.
+        developerMenuItem?.isHidden = true
+    }
+
+    deinit {
+        localMonitor.map(NSEvent.removeMonitor)
+        globalMonitor.map(NSEvent.removeMonitor)
+    }
+
+    // MARK: - Private
+
+    private var developerMenuItem: NSMenuItem? {
+        NSApp.mainMenu?.items.first { $0.title == "Developer" }
+    }
+
+    private func updateVisibility() {
+        developerMenuItem?.isHidden = !NSEvent.modifierFlags.contains(.option)
+    }
+
+    private func installMonitors() {
+        // Local monitor: fires while our app is key (covers typing ⌥ in our windows).
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.updateVisibility()
+            return event
+        }
+        // Global monitor: fires when the user holds ⌥ while our app is already frontmost
+        // but the event originates outside our windows (e.g. clicking the menu bar).
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] _ in
+            DispatchQueue.main.async { self?.updateVisibility() }
+        }
+    }
 }
