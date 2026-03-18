@@ -1,4 +1,5 @@
 mod commands;
+mod hooks;
 
 use std::path::PathBuf;
 
@@ -54,6 +55,15 @@ enum Commands {
     Inspect { package: PathBuf },
     /// Strip saved user state (_vibe_state/*) from a .vibeapp, restoring original signed content
     Revert { package: PathBuf },
+    /// Install AI coding assistant skills for Vibe development (Claude, Codex, Cursor, Copilot)
+    InstallHooks {
+        #[arg(long, value_enum, default_value_t = commands::install_hooks::Tool::All)]
+        tool: commands::install_hooks::Tool,
+        #[arg(long, value_enum, default_value_t = commands::install_hooks::Scope::Project)]
+        scope: commands::install_hooks::Scope,
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -73,5 +83,8 @@ fn main() -> anyhow::Result<()> {
         Commands::ImportCompose => commands::import_compose::run(),
         Commands::Inspect { package } => commands::inspect::run(&package),
         Commands::Revert { package } => commands::revert::run(&package),
+        Commands::InstallHooks { tool, scope, force } => {
+            commands::install_hooks::run(&tool, &scope, force)
+        }
     }
 }

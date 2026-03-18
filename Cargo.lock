@@ -1118,6 +1118,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "vibe-manifest",
  "vibe-signing",
  "zip",

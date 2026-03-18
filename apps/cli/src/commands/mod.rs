@@ -1,6 +1,7 @@
 pub mod import_compose;
 pub mod init;
 pub mod inspect;
+pub mod install_hooks;
 pub mod keygen;
 pub mod package;
 pub mod revert;

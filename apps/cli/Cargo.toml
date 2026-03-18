@@ -19,3 +19,6 @@ zip = { workspace = true }
 colored = { workspace = true }
 chrono = { workspace = true }
 ed25519-dalek = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
