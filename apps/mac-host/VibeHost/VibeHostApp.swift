@@ -35,6 +35,7 @@ struct VibeHostApp: App {
         .environment(vaultStore)
         .commands {
             DeveloperCommands()
+            ViewCommands()
         }
 
         // Optional library (Window menu > Library)
@@ -188,12 +189,47 @@ extension URL: @retroactive Identifiable {
     public var id: String { absoluteString }
 }
 
+// MARK: - View Commands
+
+struct ViewCommands: Commands {
+    @AppStorage("vibeHeaderVisible") private var headerVisible = true
+
+    var body: some Commands {
+        CommandGroup(after: .toolbar) {
+            Button(headerVisible ? "Hide Header" : "Show Header") {
+                headerVisible.toggle()
+            }
+        }
+    }
+}
+
+// MARK: - Document Controller
+
+/// Custom document controller so the tab bar "+" navigates the current app home
+/// instead of creating a blank document that can't launch.
+final class VibeDocumentController: NSDocumentController {
+    override func newDocument(_ sender: Any?) {
+        if currentDocument?.fileURL != nil {
+            // A vibe document is open — navigate it to its home page.
+            NotificationCenter.default.post(name: .vibeNavigateHome, object: nil)
+        } else {
+            super.newDocument(sender)
+        }
+    }
+}
+
 // MARK: - App Delegate
 
 /// Manages the Developer menu's Option-key visibility.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var localMonitor: Any?
     private var globalMonitor: Any?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Instantiate our custom document controller before SwiftUI touches it.
+        // applicationWillFinishLaunching is the documented Cocoa hook for this.
+        _ = VibeDocumentController()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Defer until SwiftUI has finished populating NSApp.mainMenu.

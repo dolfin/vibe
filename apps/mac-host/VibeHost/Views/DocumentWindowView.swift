@@ -10,6 +10,7 @@ struct DocumentWindowView: View {
     @Binding var document: VibeAppDocument
     let fileURL: URL?
     @Environment(VaultStore.self) private var vaultStore
+    @AppStorage("vibeHeaderVisible") private var headerVisible = true
     @State private var runtime = RuntimeState()
     @State private var isWebLoading = true
     @State private var webError: String?
@@ -32,6 +33,7 @@ struct DocumentWindowView: View {
 
     var body: some View {
         content
+            .background(WindowConfigurator(headerVisible: headerVisible))
             .navigationTitle(project.appName)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
@@ -94,8 +96,13 @@ struct DocumentWindowView: View {
                 }
             }
             .task {
+                guard !project.packageCachePath.isEmpty else { return }
                 await runtime.checkRuntime()
                 await launchCurrentProject()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .vibeNavigateHome)) { _ in
+                guard !project.packageCachePath.isEmpty else { return }
+                navControl.goHome?()
             }
             // When macOS restores a previous version (File > Revert To > Browse All Versions),
             // VibeAppDocument.init(configuration:) is called with the old file, producing a
@@ -173,6 +180,7 @@ struct DocumentWindowView: View {
     // MARK: - Launch
 
     private func launchCurrentProject() async {
+        guard !project.packageCachePath.isEmpty else { return }
         let missing = project.capabilities.requiredSecrets.filter { envVar in
             vaultStore.binding(packageId: project.packageCachePath, envVar: envVar) == nil &&
             SecretsManager.load(packageId: project.packageCachePath, name: envVar) == nil
@@ -695,5 +703,35 @@ extension FocusedValues {
     var vibeDocumentContext: VibeDocumentContext? {
         get { self[VibeDocumentContextKey.self] }
         set { self[VibeDocumentContextKey.self] = newValue }
+    }
+}
+
+// MARK: - Notification names
+
+extension Notification.Name {
+    static let vibeNavigateHome = Notification.Name("ninja.gil.VibeHost.navigateHome")
+}
+
+// MARK: - Window configurator
+
+/// Applies NSWindow-level settings that require direct access to the window.
+/// Placed as a background so it's always in the view hierarchy.
+private struct WindowConfigurator: NSViewRepresentable {
+    var headerVisible: Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { self.apply(to: view.window) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        apply(to: nsView.window)
+    }
+
+    private func apply(to window: NSWindow?) {
+        guard let window else { return }
+        window.toolbar?.isVisible = headerVisible
+        window.tabbingMode = .preferred
     }
 }
