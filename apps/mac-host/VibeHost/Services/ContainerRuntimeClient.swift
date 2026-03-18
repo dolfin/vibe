@@ -253,8 +253,8 @@ enum ContainerRuntimeClient {
         let sshArgs = [
             "-p", "22",
             "-i", effectiveKeyPath,
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "UserKnownHostsFile=\(vibeSSHKnownHostsPath())",
             "-o", "ConnectTimeout=5",
             "\(vmSSHUser)@\(vmHost)"
         ] + args

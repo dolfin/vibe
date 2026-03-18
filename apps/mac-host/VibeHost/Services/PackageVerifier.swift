@@ -24,7 +24,7 @@ enum PackageVerifier {
         }
 
         guard let pubKeyData = publicKey, pubKeyData.count == 32 else {
-            return .signed // Has signature but no key to verify with
+            return .unsigned // Cannot verify without a valid key — treat as unsigned
         }
 
         do {

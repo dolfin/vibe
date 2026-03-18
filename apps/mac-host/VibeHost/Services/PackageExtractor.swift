@@ -186,12 +186,17 @@ enum PackageExtractor {
 
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-            proc.arguments = ["-xzf", tmpURL.path, "-C", volDir.path, "--no-same-owner", "--no-absolute-names"]
-            proc.standardError = Pipe()
+            // Note: --no-absolute-names is GNU tar only; BSD tar (macOS) does not support it.
+            // Absolute path safety is enforced by the pre-scan above.
+            proc.arguments = ["-xzf", tmpURL.path, "-C", volDir.path, "--no-same-owner"]
+            let stderrPipe = Pipe()
+            proc.standardError = stderrPipe
             try proc.run()
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
             proc.waitUntilExit()
             guard proc.terminationStatus == 0 else {
-                throw ExtractionError.tarExtractionFailed(volName)
+                let msg = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                throw ExtractionError.tarExtractionFailed("\(volName): \(msg)")
             }
         }
     }

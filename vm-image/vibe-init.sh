@@ -202,23 +202,39 @@ log "root authorized_keys: $(ls -la /root/.ssh/authorized_keys 2>/dev/null || ec
 
 # ── SSH server ───────────────────────────────────────────────────────────────
 log "Starting sshd..."
+# Alpine minirootfs is packed on macOS with tar --no-same-owner, so /root and
+# other initramfs files arrive owned by the macOS builder's UID, not 0.
+# StrictModes yes checks that the home dir is owned by root; fix it here.
+chown 0:0 /root
 # sshd requires /var/empty owned by root with no group/world write
 mkdir -p /var/empty
 chmod 711 /var/empty
 chown root:root /var/empty
-ssh-keygen -A 2>&1 | while IFS= read -r l; do log "keygen: $l"; done || true
+# Persist SSH host keys on the data disk so the VM presents a stable fingerprint
+# across reboots. accept-new on the host side only works if the key is stable.
+SSH_HOSTKEY_CACHE=/var/lib/containerd/.vibe-ssh-hostkeys
+if [ -d "$SSH_HOSTKEY_CACHE" ] && ls "$SSH_HOSTKEY_CACHE"/ssh_host_* > /dev/null 2>&1; then
+    cp "$SSH_HOSTKEY_CACHE"/ssh_host_* /etc/ssh/ 2>/dev/null || true
+    chmod 600 /etc/ssh/ssh_host_*_key 2>/dev/null || true
+    chmod 644 /etc/ssh/ssh_host_*_key.pub 2>/dev/null || true
+    log "Restored persistent SSH host keys"
+else
+    ssh-keygen -A 2>&1 | while IFS= read -r l; do log "keygen: $l"; done || true
+    mkdir -p "$SSH_HOSTKEY_CACHE"
+    cp /etc/ssh/ssh_host_* "$SSH_HOSTKEY_CACHE/" 2>/dev/null || true
+    log "Generated and cached SSH host keys"
+fi
 # Use absolute path for AuthorizedKeysFile (no %u substitution) to avoid any expansion bugs
-# Log to /vibe-shared/sshd-debug.log so the host app can read it for auth diagnostics
 cat > /etc/ssh/sshd_config << 'SSHD'
 PermitRootLogin prohibit-password
 PasswordAuthentication no
 PubkeyAuthentication yes
 AuthorizedKeysFile /root/.ssh/authorized_keys
-StrictModes no
-LogLevel DEBUG3
+StrictModes yes
+LogLevel ERROR
 SetEnv PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SSHD
-/usr/sbin/sshd -E /vibe-shared/sshd-debug.log 2>/tmp/sshd.log && log "sshd started OK" || log "sshd start failed: $(cat /tmp/sshd.log 2>/dev/null)"
+/usr/sbin/sshd -E /tmp/sshd-debug.log 2>/tmp/sshd.log && log "sshd started OK" || log "sshd start failed: $(cat /tmp/sshd.log 2>/dev/null)"
 # Wait for sshd to bind on port 22 (use /proc/net/tcp since ss may not be available)
 # Port 22 = 0x0016 in hex
 for i in $(seq 20); do
@@ -278,17 +294,18 @@ if [ ! -f "$RUNC_REAL" ]; then
 fi
 cat > /usr/bin/runc << 'RUNC_WRAPPER'
 #!/bin/sh
-# runc 1.1.x moved --no-pivot from global to subcommand level (after create/run).
-# Scan args and inject --no-pivot right after the create/run subcommand.
-# Containerd paths never contain spaces/metacharacters so eval is safe here.
+# Inject --no-pivot after the create/run subcommand (runc 1.1.x).
+# Containerd passes global flags (--root, --log, --log-format) BEFORE the
+# subcommand, so the subcommand is NOT always $1 — scan all args.
+# Single-quote each arg so eval handles paths with spaces safely.
 _new=""
 for _a in "$@"; do
     case "$_a" in
-        create|run) _new="$_new $_a --no-pivot" ;;
-        *) _new="$_new $_a" ;;
+        create|run) _new="${_new} '${_a}' --no-pivot" ;;
+        *)          _new="${_new} '${_a}'" ;;
     esac
 done
-eval exec /usr/bin/runc.real $_new
+eval exec /usr/bin/runc.real${_new}
 RUNC_WRAPPER
 chmod +x /usr/bin/runc
 log "runc wrapper installed → /usr/bin/runc (real: $RUNC_REAL)"

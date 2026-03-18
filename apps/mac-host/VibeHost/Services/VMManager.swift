@@ -595,3 +595,16 @@ func vibeSSHPrivateKeyPath() -> String {
     try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: dest.path)
     return dest.path
 }
+
+/// Path to the SSH known_hosts file for the Vibe VM.
+/// Uses `libraryDirectory` (no spaces) so SSH's `-o UserKnownHostsFile=` parser doesn't break.
+/// Host keys are persisted across VM reboots by vibe-init.sh, so `accept-new` works correctly:
+/// the fingerprint is accepted once on first connect and verified on all subsequent connects.
+func vibeSSHKnownHostsPath() -> String {
+    // libraryDirectory → ~/Library/Containers/<bundle>/Data/Library/ (no spaces in this segment)
+    let dir = FileManager.default
+        .urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Vibe/vm")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir.appendingPathComponent("known_hosts").path
+}
