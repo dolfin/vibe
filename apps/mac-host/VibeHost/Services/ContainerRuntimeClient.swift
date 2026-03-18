@@ -262,13 +262,18 @@ enum ContainerRuntimeClient {
         var lastResult: (stdout: String, stderr: String, status: Int32) = ("", "", -1)
         for attempt in 1...5 {
             lastResult = try await runProcess("/usr/bin/ssh", args: sshArgs, timeout: timeout)
-            // Exit code 255 = SSH transport error (connection reset, refused, etc.)
+            // Exit code 255 = SSH transport error.
             if lastResult.status != 255 { return lastResult }
-            let isConnErr = lastResult.stderr.contains("Connection reset")
-                || lastResult.stderr.contains("Connection refused")
-                || lastResult.stderr.contains("kex_exchange_identification")
-            guard isConnErr && attempt < 5 else { return lastResult }
-            logger.warning("SSH attempt \(attempt) failed (transport), retrying in 2s…")
+            // Don't retry definitive security rejections — they won't self-heal.
+            let isHardFailure = lastResult.stderr.contains("REMOTE HOST IDENTIFICATION HAS CHANGED")
+                || lastResult.stderr.contains("Host key verification failed")
+                || lastResult.stderr.contains("Permission denied (")
+            guard !isHardFailure && attempt < 5 else { return lastResult }
+            // On macOS 26, ssh uses Network.framework and may emit
+            // "nw_connection_copy_protocol_metadata_internal on unconnected nw_connection"
+            // instead of "Connection refused" when sshd isn't ready yet.
+            // Retry on any status-255 that isn't a hard failure.
+            logger.warning("SSH attempt \(attempt) failed (transport): \(lastResult.stderr.prefix(120)), retrying in 2s…")
             try await Task.sleep(nanoseconds: 2_000_000_000)
         }
         return lastResult

@@ -44,6 +44,7 @@ final class VMManager: NSObject {
 
     private var vm: VZVirtualMachine?
     private var socketDevice: VZVirtioSocketDevice?
+    private var dataDiskAttachment: VZDiskImageStorageDeviceAttachment?
     private var consoleLogFH: FileHandle?
     private var consolePipe: Pipe?
     /// TCP server fds keyed by local port (kept alive to accept new connections).
@@ -124,18 +125,51 @@ final class VMManager: NSObject {
     private var readyFlagURL: URL { sharedDir.appendingPathComponent(".vibe-ready") }
     var consoleLogURL: URL { vmDir.appendingPathComponent("console.log") }
 
-    /// Create a blank sparse data disk if it doesn't already exist.
-    /// Using FileHandle (not dd/subprocess) produces a raw sparse file
-    /// that Virtualization.framework accepts on macOS 26.
+    /// Create a blank data disk if it doesn't already exist (or if the existing one
+    /// is a purely sparse APFS file that VZDiskImageStorageDeviceAttachment rejects).
+    ///
+    /// `ftruncate` alone creates an APFS sparse file with 0 physical blocks.
+    /// VZ rejects such files at `machine.start()` with "The storage device attachment
+    /// is invalid." (VZErrorDomain Code=2).  Fix: use `F_PREALLOCATE` to force actual
+    /// block allocation before extending to the target size.
     private func ensureDataDisk() throws {
-        guard !FileManager.default.fileExists(atPath: dataDiskURL.path) else { return }
-        let size: UInt64 = 4 * 1024 * 1024 * 1024
         let url = dataDiskURL
+        // Detect an existing purely-sparse file (st_blocks == 0 means no physical blocks).
+        if FileManager.default.fileExists(atPath: url.path) {
+            var st: stat = .init()  // struct init — avoids ambiguity with stat() syscall
+            if stat(url.path, &st) == 0, st.st_blocks == 0 {
+                logger.warning("data.img has 0 physical blocks — recreating with F_PREALLOCATE")
+                try FileManager.default.removeItem(at: url)
+                // Clear known_hosts so SSH accepts the new VM host key with accept-new.
+                // A fresh data disk means new SSH host keys; keeping the old known_hosts
+                // entry causes StrictHostKeyChecking=accept-new to reject the changed key.
+                let knownHostsPath = vibeSSHKnownHostsPath()
+                try? FileManager.default.removeItem(atPath: knownHostsPath)
+                logger.info("Cleared known_hosts alongside data disk reset")
+            } else {
+                return // exists and has physical blocks; leave it
+            }
+        }
+
+        let size: UInt64 = 4 * 1024 * 1024 * 1024
         FileManager.default.createFile(atPath: url.path, contents: nil)
         let fh = try FileHandle(forWritingTo: url)
         defer { try? fh.close() }
+
+        // Request contiguous physical allocation first; fall back to non-contiguous.
+        // F_PREALLOCATE ensures the file has real extents so VZ can use it as a block device.
+        var store = fstore_t()
+        store.fst_flags = UInt32(F_ALLOCATECONTIG)
+        store.fst_posmode = Int32(F_PEOFPOSMODE)
+        store.fst_offset = 0
+        store.fst_length = off_t(size)
+        if fcntl(fh.fileDescriptor, F_PREALLOCATE, &store) != 0 {
+            store.fst_flags = UInt32(F_ALLOCATEALL) // non-contiguous fallback
+            _ = fcntl(fh.fileDescriptor, F_PREALLOCATE, &store)
+        }
+        // ftruncate sets the file size to exactly `size` (filling any remaining holes with zeros).
         try fh.truncate(atOffset: size)
-        logger.info("Created blank data disk at \(url.path)")
+        logger.info("Created data disk at \(url.path) (\(size / (1024*1024*1024)) GB)")
     }
 
     // MARK: - Public API
@@ -224,8 +258,12 @@ final class VMManager: NSObject {
     func clearCaches() async {
         logger.info("Clearing all caches...")
         await stop()
+        // Release the cached attachment before deleting the file it wraps.
+        dataDiskAttachment = nil
         // Delete the VM data disk (package cache + Docker image cache)
         try? FileManager.default.removeItem(at: dataDiskURL)
+        // Clear known_hosts — new disk means new SSH host keys; old entry would block accept-new.
+        try? FileManager.default.removeItem(atPath: vibeSSHKnownHostsPath())
         // Delete the .vibeapp package cache
         let pkgCache = StorageManager.packageCacheDir
         try? FileManager.default.removeItem(at: pkgCache)
@@ -253,6 +291,19 @@ final class VMManager: NSObject {
     // MARK: - Boot
 
     private func boot() async throws {
+        // If a previous boot() set vm and then waitForReadyFlag timed out (or the VM
+        // crashed via the delegate), release stale state before creating a new machine.
+        // vm is now set AFTER start() succeeds, so this is only reached for
+        // waitForReadyFlag timeouts or delegate-reported crashes.
+        if let staleVM = vm {
+            vm = nil
+            dataDiskAttachment = nil  // release file lock before stopping
+            try? await staleVM.stop()
+            // Yield so any pending @MainActor delegate callbacks (which also nil vm/dataDisk)
+            // can complete before we build a new config and re-acquire the lock.
+            await Task.yield()
+        }
+
         state = .booting
         try? FileManager.default.removeItem(at: readyFlagURL)
 
@@ -275,9 +326,11 @@ final class VMManager: NSObject {
         let config = try buildConfig(kernelURL: kURL, initrdURL: iURL)
         let machine = VZVirtualMachine(configuration: config)
         machine.delegate = self
-        vm = machine
-
+        // Set vm AFTER start() succeeds — if start() throws, machine goes out of scope
+        // and is deallocated (releasing the disk attachment file lock) without needing
+        // any stale-VM cleanup on the next boot.
         try await machine.start()
+        vm = machine
         logger.info("BENCH vm-start: hypervisor start in \(String(format: "%.2f", -bootStart.timeIntervalSinceNow))s")
 
         // Grab the vsock device (needed for bridges)
@@ -356,8 +409,10 @@ final class VMManager: NSObject {
 
         // Persistent data disk — mounted at /var/lib/containerd inside VM.
         // Without this, overlayfs snapshots land on ramfs and pivot_root fails.
-        let diskAttachment = try VZDiskImageStorageDeviceAttachment(url: dataDiskURL, readOnly: false)
-        config.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)]
+        // boot() stops any stale VM before calling buildConfig(), so dataDiskAttachment
+        // is always nil here and we always get a fresh attachment with a clean file lock.
+        dataDiskAttachment = try VZDiskImageStorageDeviceAttachment(url: dataDiskURL, readOnly: false)
+        config.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: dataDiskAttachment!)]
 
         // vsock — bidirectional host↔VM socket communication
         config.socketDevices = [VZVirtioSocketDeviceConfiguration()]
@@ -493,6 +548,7 @@ extension VMManager: VZVirtualMachineDelegate {
         Task { @MainActor in
             logger.error("VM crashed: \(error.localizedDescription)")
             self.vm = nil
+            self.dataDiskAttachment = nil  // release file lock so next boot can re-attach
             self.socketDevice = nil
             self.state = .failed(error.localizedDescription)
         }
@@ -501,6 +557,7 @@ extension VMManager: VZVirtualMachineDelegate {
         Task { @MainActor in
             logger.info("VM guest halted")
             self.vm = nil
+            self.dataDiskAttachment = nil  // release file lock
             self.socketDevice = nil
             self.state = .idle
         }
