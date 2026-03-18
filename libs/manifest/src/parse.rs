@@ -2,6 +2,9 @@ use std::path::Path;
 
 use crate::Manifest;
 
+/// Maximum allowed manifest size (1 MB). Prevents YAML bomb / memory exhaustion.
+const MAX_MANIFEST_BYTES: usize = 1_000_000;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     #[error("YAML parse error: {0}")]
@@ -12,10 +15,16 @@ pub enum ParseError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("manifest exceeds maximum allowed size of {MAX_MANIFEST_BYTES} bytes")]
+    TooLarge,
 }
 
 /// Parse a manifest from a YAML string.
 pub fn parse_manifest(yaml: &str) -> Result<Manifest, ParseError> {
+    if yaml.len() > MAX_MANIFEST_BYTES {
+        return Err(ParseError::TooLarge);
+    }
     let manifest: Manifest = serde_yaml::from_str(yaml)?;
     Ok(manifest)
 }

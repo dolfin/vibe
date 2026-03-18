@@ -22,6 +22,9 @@ pub enum ValidationError {
     #[error("path traversal detected in {field}: {path}")]
     PathTraversal { field: String, path: String },
 
+    #[error("absolute path not allowed in {field}: {path}")]
+    AbsolutePath { field: String, path: String },
+
     #[error("service '{service}' depends on unknown service '{dependency}'")]
     UnknownDependency { service: String, dependency: String },
 
@@ -33,6 +36,18 @@ pub enum ValidationError {
 
     #[error("service '{service}' references undeclared volume: {volume}")]
     UndeclaredVolume { service: String, volume: String },
+
+    #[error("field '{field}' exceeds maximum length of {max} characters")]
+    FieldTooLong { field: String, max: usize },
+
+    #[error("invalid image name in service '{service}': {reason}")]
+    InvalidImage { service: String, reason: String },
+
+    #[error("too many {field}: maximum is {max}")]
+    TooMany { field: String, max: usize },
+
+    #[error("invalid env var name '{name}' in service '{service}': must match [A-Z_][A-Z0-9_]*")]
+    InvalidEnvVarName { service: String, name: String },
 }
 
 /// Validate a parsed manifest, returning all discovered errors.
@@ -62,6 +77,27 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), Vec<ValidationError>
         }
     }
 
+    // String length limits for top-level fields
+    const MAX_ID_LEN: usize = 256;
+    const MAX_NAME_LEN: usize = 256;
+    const MAX_IMAGE_LEN: usize = 512;
+    const MAX_COMMAND_ELEMENT_LEN: usize = 2048;
+    const MAX_ENV_VALUE_LEN: usize = 4096;
+    const MAX_SERVICES: usize = 20;
+    const MAX_MOUNTS: usize = 50;
+    const MAX_ENV_VARS: usize = 100;
+
+    if let Some(ref id) = manifest.id {
+        if id.len() > MAX_ID_LEN {
+            errors.push(ValidationError::FieldTooLong { field: "id".into(), max: MAX_ID_LEN });
+        }
+    }
+    if let Some(ref name) = manifest.name {
+        if name.len() > MAX_NAME_LEN {
+            errors.push(ValidationError::FieldTooLong { field: "name".into(), max: MAX_NAME_LEN });
+        }
+    }
+
     // Must have at least one service
     let services = match &manifest.services {
         Some(s) if !s.is_empty() => s,
@@ -73,6 +109,11 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), Vec<ValidationError>
             return Err(errors);
         }
     };
+
+    // Collection size limits
+    if services.len() > MAX_SERVICES {
+        errors.push(ValidationError::TooMany { field: "services".into(), max: MAX_SERVICES });
+    }
 
     // Validate icon path
     if let Some(ref icon) = manifest.icon {
@@ -116,6 +157,67 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), Vec<ValidationError>
             errors.push(ValidationError::InvalidServiceName(svc.name.clone()));
         }
 
+        // Validate image name: reject null bytes, enforce length, require printable ASCII
+        if let Some(ref image) = svc.image {
+            if image.len() > MAX_IMAGE_LEN {
+                errors.push(ValidationError::FieldTooLong {
+                    field: format!("service '{}' image", svc.name),
+                    max: MAX_IMAGE_LEN,
+                });
+            } else if image.contains('\0') || image.chars().any(|c| c.is_control()) {
+                errors.push(ValidationError::InvalidImage {
+                    service: svc.name.clone(),
+                    reason: "contains control characters or null bytes".into(),
+                });
+            } else if image.trim().is_empty() {
+                errors.push(ValidationError::InvalidImage {
+                    service: svc.name.clone(),
+                    reason: "image name must not be empty".into(),
+                });
+            }
+        }
+
+        // Validate command element lengths
+        if let Some(ref cmd) = svc.command {
+            for element in cmd {
+                if element.len() > MAX_COMMAND_ELEMENT_LEN {
+                    errors.push(ValidationError::FieldTooLong {
+                        field: format!("service '{}' command element", svc.name),
+                        max: MAX_COMMAND_ELEMENT_LEN,
+                    });
+                }
+            }
+        }
+
+        // Validate env var names and value lengths
+        if let Some(ref env) = svc.env {
+            if env.len() > MAX_ENV_VARS {
+                errors.push(ValidationError::TooMany {
+                    field: format!("service '{}' env vars", svc.name),
+                    max: MAX_ENV_VARS,
+                });
+            }
+            let env_key_valid = |k: &str| -> bool {
+                !k.is_empty()
+                    && k.chars().next().map_or(false, |c| c.is_ascii_uppercase() || c == '_')
+                    && k.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+            };
+            for (key, value) in env {
+                if !env_key_valid(key) {
+                    errors.push(ValidationError::InvalidEnvVarName {
+                        service: svc.name.clone(),
+                        name: key.clone(),
+                    });
+                }
+                if value.len() > MAX_ENV_VALUE_LEN {
+                    errors.push(ValidationError::FieldTooLong {
+                        field: format!("service '{}' env var '{}'", svc.name, key),
+                        max: MAX_ENV_VALUE_LEN,
+                    });
+                }
+            }
+        }
+
         // Validate ports
         if let Some(ref ports) = svc.ports {
             for port in ports {
@@ -128,10 +230,21 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), Vec<ValidationError>
             }
         }
 
-        // Validate mount paths for traversal
+        // Validate mount paths for traversal and absolute paths
         if let Some(ref mounts) = svc.mounts {
+            if mounts.len() > MAX_MOUNTS {
+                errors.push(ValidationError::TooMany {
+                    field: format!("service '{}' mounts", svc.name),
+                    max: MAX_MOUNTS,
+                });
+            }
             for mount in mounts {
-                if mount.source.contains("..") {
+                if mount.source.starts_with('/') {
+                    errors.push(ValidationError::AbsolutePath {
+                        field: format!("service '{}' mount source", svc.name),
+                        path: mount.source.clone(),
+                    });
+                } else if mount.source.contains("..") {
                     errors.push(ValidationError::PathTraversal {
                         field: format!("service '{}' mount source", svc.name),
                         path: mount.source.clone(),

@@ -98,6 +98,19 @@ enum ContainerRuntimeClient {
 
         var nerdctlArgs = ["nerdctl", "run", "-d", "--name", spec.name]
 
+        // Security: drop dangerous capabilities while keeping what most apps need.
+        // We drop high-risk caps (SYS_ADMIN, NET_ADMIN, etc.) but preserve
+        // CHOWN, SETUID, NET_BIND_SERVICE, DAC_OVERRIDE, etc. for normal operation.
+        let droppedCaps = ["SYS_ADMIN", "NET_ADMIN", "SYS_PTRACE", "SYS_MODULE",
+                           "SYS_RAWIO", "SYS_BOOT", "SYS_PACCT", "SYS_NICE",
+                           "SYS_TIME", "SYS_TTY_CONFIG", "AUDIT_CONTROL", "MAC_ADMIN",
+                           "MAC_OVERRIDE", "SYSLOG"]
+        for cap in droppedCaps {
+            nerdctlArgs += ["--cap-drop", cap]
+        }
+        nerdctlArgs += ["--memory", "512m", "--memory-swap", "512m"]
+        nerdctlArgs += ["--cpus", "1.0"]
+
         for pm in spec.ports {
             nerdctlArgs += ["-p", "\(pm.host):\(pm.container)"]
         }

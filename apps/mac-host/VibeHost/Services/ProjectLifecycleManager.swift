@@ -204,8 +204,21 @@ actor ProjectLifecycleManager {
             // Append any explicit mounts from the manifest (e.g. nginx content dir).
             var volumes = [DockerVolumeMount(hostPath: state.vmProjectPath, containerPath: "/app")]
             for m in svc.mounts {
+                // Reject absolute paths and traversal sequences in mount source
+                guard !m.source.hasPrefix("/"),
+                      !m.source.contains(".."),
+                      !m.source.isEmpty else {
+                    logger.warning("Skipping unsafe mount source '\(m.source)' in service '\(svc.name)'")
+                    continue
+                }
+                // Verify the resolved VM path stays within the project directory
+                let resolvedPath = "\(state.vmProjectPath)/\(m.source)"
+                guard resolvedPath.hasPrefix(state.vmProjectPath + "/") else {
+                    logger.warning("Mount source '\(m.source)' escapes project dir — skipping")
+                    continue
+                }
                 volumes.append(DockerVolumeMount(
-                    hostPath: "\(state.vmProjectPath)/\(m.source)",
+                    hostPath: resolvedPath,
                     containerPath: m.target
                 ))
             }

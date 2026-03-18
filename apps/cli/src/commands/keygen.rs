@@ -25,6 +25,13 @@ pub fn run(output: &str) -> Result<()> {
 
     fs::write(&key_path, sk_bytes)
         .with_context(|| format!("Failed to write signing key to '{}'", key_path))?;
+    // Restrict private key to owner-read-only before anyone else can read it
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("Failed to set permissions on '{}'", key_path))?;
+    }
     fs::write(&pub_path, vk_bytes)
         .with_context(|| format!("Failed to write verifying key to '{}'", pub_path))?;
 

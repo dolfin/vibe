@@ -23,8 +23,14 @@ struct DocumentWindowView: View {
     @State private var navControl = WebViewNavControl()
 
     private enum ActiveSheet: Identifiable {
-        case info, secrets
-        var id: String { switch self { case .info: "info"; case .secrets: "secrets" } }
+        case info, secrets, trustWarning
+        var id: String {
+            switch self {
+            case .info: "info"
+            case .secrets: "secrets"
+            case .trustWarning: "trustWarning"
+            }
+        }
     }
     @State private var activeSheet: ActiveSheet?
 
@@ -93,6 +99,14 @@ struct DocumentWindowView: View {
                     SecretsEntryView(project: project, mode: .launch) { secrets in
                         Task { await doLaunch(secrets: secrets) }
                     }
+                case .trustWarning:
+                    TrustWarningSheet(
+                        trustStatus: project.trustStatus,
+                        appName: project.appName,
+                        onProceed: {
+                            Task { await proceedWithLaunch() }
+                        }
+                    )
                 }
             }
             .task {
@@ -181,6 +195,21 @@ struct DocumentWindowView: View {
 
     private func launchCurrentProject() async {
         guard !project.packageCachePath.isEmpty else { return }
+
+        // Block tampered packages entirely; prompt for unsigned packages
+        switch project.trustStatus {
+        case .tampered, .unsigned:
+            activeSheet = .trustWarning
+            return
+        case .verified, .signed:
+            break
+        }
+
+        await proceedWithLaunch()
+    }
+
+    private func proceedWithLaunch() async {
+        activeSheet = nil
         let missing = project.capabilities.requiredSecrets.filter { envVar in
             vaultStore.binding(packageId: project.packageCachePath, envVar: envVar) == nil &&
             SecretsManager.load(packageId: project.packageCachePath, name: envVar) == nil
@@ -703,6 +732,74 @@ extension FocusedValues {
     var vibeDocumentContext: VibeDocumentContext? {
         get { self[VibeDocumentContextKey.self] }
         set { self[VibeDocumentContextKey.self] = newValue }
+    }
+}
+
+// MARK: - Trust Warning Sheet
+
+private struct TrustWarningSheet: View {
+    let trustStatus: TrustStatus
+    let appName: String
+    let onProceed: (() -> Void)?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: isTampered ? "xmark.shield.fill" : "exclamationmark.shield.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(isTampered ? .red : .orange)
+
+            Text(isTampered ? "Package Verification Failed" : "Unverified Package")
+                .font(.title2.weight(.semibold))
+
+            Text(isTampered ? warningTampered : warningUnsigned)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 360)
+
+            Divider()
+
+            HStack(spacing: 12) {
+                if isTampered {
+                    Button("Proceed Anyway") {
+                        dismiss()
+                        onProceed?()
+                    }
+
+                    Button("Close") {
+                        // Capture the document window (sheet parent) before dismissing,
+                        // so the close targets the right window after the sheet disappears.
+                        let docWindow = NSApp.keyWindow?.sheetParent ?? NSApp.keyWindow
+                        dismiss()
+                        DispatchQueue.main.async { docWindow?.performClose(nil) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return)
+                } else {
+                    Button("Cancel") { dismiss() }
+                        .keyboardShortcut(.escape)
+
+                    Button("Open Anyway") {
+                        dismiss()
+                        onProceed?()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                }
+            }
+        }
+        .padding(28)
+        .frame(minWidth: 400)
+    }
+
+    private var isTampered: Bool { trustStatus == .tampered }
+
+    private var warningTampered: String {
+        "The contents of \"\(appName)\" do not match its signature. The package may have been modified by a third party and is not safe to open."
+    }
+
+    private var warningUnsigned: String {
+        "\"\(appName)\" has no cryptographic signature and cannot be verified as safe. Only open packages from sources you trust."
     }
 }
 

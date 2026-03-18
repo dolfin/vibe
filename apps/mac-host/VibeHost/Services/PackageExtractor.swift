@@ -18,6 +18,7 @@ enum PackageExtractor {
         case invalidAppManifest(String)
         case tarExtractionFailed(String)
         case rebuildFailed
+        case pathTraversal(String)
 
         var errorDescription: String? {
             switch self {
@@ -27,6 +28,7 @@ enum PackageExtractor {
             case .invalidAppManifest(let detail): "Failed to parse _vibe_app_manifest.json: \(detail)"
             case .tarExtractionFailed(let vol): "Failed to extract state tarball for volume '\(vol)'"
             case .rebuildFailed: "Failed to rebuild package archive"
+            case .pathTraversal(let path): "Package contains a path traversal entry: '\(path)'"
             }
         }
     }
@@ -96,12 +98,19 @@ enum PackageExtractor {
 
         let archive = try Archive(data: data, accessMode: .read, pathEncoding: nil)
 
+        let canonicalDir = directory.standardized
+
         for entry in archive {
             let name = entry.path
             // Skip metadata files
             if name.hasPrefix("_vibe_") { continue }
 
-            let destURL = directory.appendingPathComponent(name)
+            let destURL = directory.appendingPathComponent(name).standardized
+
+            // Prevent ZIP slip: reject any path that escapes the extraction directory
+            guard destURL.path.hasPrefix(canonicalDir.path + "/") || destURL.path == canonicalDir.path else {
+                throw ExtractionError.pathTraversal(name)
+            }
 
             if entry.type == .directory {
                 try fm.createDirectory(at: destURL, withIntermediateDirectories: true)
@@ -156,9 +165,28 @@ enum PackageExtractor {
             defer { try? fm.removeItem(at: tmpURL) }
             try tarData.write(to: tmpURL)
 
+            // Pre-scan: list all tar entry paths and reject any that escape the target directory
+            let listProc = Process()
+            listProc.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+            listProc.arguments = ["-tzf", tmpURL.path]
+            let listPipe = Pipe()
+            listProc.standardOutput = listPipe
+            listProc.standardError = Pipe()
+            try listProc.run()
+            let listData = listPipe.fileHandleForReading.readDataToEndOfFile()
+            listProc.waitUntilExit()
+            if let listing = String(data: listData, encoding: .utf8) {
+                for entryPath in listing.split(separator: "\n").map(String.init) {
+                    // Reject absolute paths and any path with traversal components
+                    if entryPath.hasPrefix("/") || entryPath.contains("../") || entryPath == ".." {
+                        throw ExtractionError.pathTraversal(entryPath)
+                    }
+                }
+            }
+
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-            proc.arguments = ["-xzf", tmpURL.path, "-C", volDir.path]
+            proc.arguments = ["-xzf", tmpURL.path, "-C", volDir.path, "--no-same-owner", "--no-absolute-names"]
             proc.standardError = Pipe()
             try proc.run()
             proc.waitUntilExit()
