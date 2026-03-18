@@ -38,6 +38,7 @@ struct VibeApp: App {
         }
         .environment(vaultStore)
         .commands {
+            NewItemCommands()
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") {
                     updaterController.updater.checkForUpdates()
@@ -59,6 +60,13 @@ struct VibeApp: App {
             )
         }
         .environment(vaultStore)
+
+        // Get Started window (File > New or ⌘N)
+        Window("Get Started", id: "get-started") {
+            GetStartedView()
+        }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 560, height: 480)
 
         // Secret Vault window (Window menu > Secret Vault, or ⌘⇧K)
         Window("Secret Vault", id: "vault") {
@@ -199,6 +207,21 @@ extension URL: @retroactive Identifiable {
     public var id: String { absoluteString }
 }
 
+// MARK: - New Item Commands
+
+struct NewItemCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New…") {
+                openWindow(id: "get-started")
+            }
+            .keyboardShortcut("n", modifiers: .command)
+        }
+    }
+}
+
 // MARK: - View Commands
 
 struct ViewCommands: Commands {
@@ -213,33 +236,12 @@ struct ViewCommands: Commands {
     }
 }
 
-// MARK: - Document Controller
-
-/// Custom document controller so the tab bar "+" navigates the current app home
-/// instead of creating a blank document that can't launch.
-final class VibeDocumentController: NSDocumentController {
-    override func newDocument(_ sender: Any?) {
-        if currentDocument?.fileURL != nil {
-            // A vibe document is open — navigate it to its home page.
-            NotificationCenter.default.post(name: .vibeNavigateHome, object: nil)
-        } else {
-            super.newDocument(sender)
-        }
-    }
-}
-
 // MARK: - App Delegate
 
 /// Manages the Developer menu's Option-key visibility.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var localMonitor: Any?
     private var globalMonitor: Any?
-
-    func applicationWillFinishLaunching(_ notification: Notification) {
-        // Instantiate our custom document controller before SwiftUI touches it.
-        // applicationWillFinishLaunching is the documented Cocoa hook for this.
-        _ = VibeDocumentController()
-    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Defer until SwiftUI has finished populating NSApp.mainMenu.
