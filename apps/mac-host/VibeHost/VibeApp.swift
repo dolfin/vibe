@@ -9,7 +9,7 @@ extension UTType {
 
 
 @main
-struct VibeHostApp: App {
+struct VibeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var projectStore = ProjectStore()
     @State private var vaultStore = VaultStore()

@@ -1,7 +1,7 @@
 import SwiftUI
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "OpenPackage")
+private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "OpenPackage")
 
 /// Sheet modal displayed when opening a .vibeapp package.
 struct OpenPackageView: View {

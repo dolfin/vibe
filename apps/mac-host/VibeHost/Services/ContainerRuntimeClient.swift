@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "Container")
+private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "Container")
 
 // MARK: - Types
 

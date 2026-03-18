@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "Runtime")
+private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "Runtime")
 
 /// Tracks the runtime state of projects (whether they're running in the Vibe VM).
 @Observable

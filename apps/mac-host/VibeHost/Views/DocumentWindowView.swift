@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "DocumentWindow")
+private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "DocumentWindow")
 
 /// Per-document window: WebKit fills the window, auto-launches on open.
 /// An (i) toolbar button opens a sheet with all technical details.
@@ -806,7 +806,7 @@ private struct TrustWarningSheet: View {
 // MARK: - Notification names
 
 extension Notification.Name {
-    static let vibeNavigateHome = Notification.Name("ninja.gil.VibeHost.navigateHome")
+    static let vibeNavigateHome = Notification.Name("ninja.gil.Vibe.navigateHome")
 }
 
 // MARK: - Window configurator

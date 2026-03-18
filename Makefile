@@ -77,12 +77,12 @@ release-app:
 	@echo "==> Archiving macOS app..."
 	xcodebuild archive \
 		-project apps/mac-host/VibeHost.xcodeproj \
-		-scheme VibeHost \
+		-scheme Vibe \
 		-configuration Release \
-		-archivePath build/VibeHost.xcarchive
+		-archivePath build/Vibe.xcarchive
 	@echo "==> Exporting archive..."
 	xcodebuild -exportArchive \
-		-archivePath build/VibeHost.xcarchive \
+		-archivePath build/Vibe.xcarchive \
 		-exportOptionsPlist apps/mac-host/ExportOptions.plist \
 		-exportPath build/export/
 	@echo "==> App exported to build/export/"

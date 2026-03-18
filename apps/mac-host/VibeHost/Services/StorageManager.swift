@@ -3,7 +3,7 @@ import CryptoKit
 import ZIPFoundation
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "Storage")
+private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "Storage")
 
 /// Manages local storage for Vibe packages and project registry.
 enum StorageManager {

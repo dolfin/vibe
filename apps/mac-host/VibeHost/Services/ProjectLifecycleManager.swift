@@ -2,7 +2,7 @@ import Foundation
 import Network
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "Lifecycle")
+private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "Lifecycle")
 
 /// Manages project runtime lifecycle — importing, starting, stopping containers inside the Vibe VM.
 actor ProjectLifecycleManager {
@@ -300,7 +300,7 @@ actor ProjectLifecycleManager {
                 return
             }
             let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
-            let q = DispatchQueue(label: "ninja.gil.VibeHost.tcpProbe.\(port)")
+            let q = DispatchQueue(label: "ninja.gil.Vibe.tcpProbe.\(port)")
             var done = false
 
             func finish(_ result: Bool) {

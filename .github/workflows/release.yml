@@ -214,15 +214,15 @@ jobs:
         run: |
           xcodebuild archive \
             -project apps/mac-host/VibeHost.xcodeproj \
-            -scheme VibeHost \
+            -scheme Vibe \
             -configuration Release \
-            -archivePath "$RUNNER_TEMP/VibeHost.xcarchive" \
+            -archivePath "$RUNNER_TEMP/Vibe.xcarchive" \
             OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_NAME"
 
       - name: Export archive
         run: |
           xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/VibeHost.xcarchive" \
+            -archivePath "$RUNNER_TEMP/Vibe.xcarchive" \
             -exportOptionsPlist apps/mac-host/ExportOptions.plist \
             -exportPath "$RUNNER_TEMP/export"
 
@@ -232,10 +232,10 @@ jobs:
           VERSION="${VERSION#v}"
           hdiutil create \
             -volname "Vibe" \
-            -srcfolder "$RUNNER_TEMP/export/VibeHost.app" \
+            -srcfolder "$RUNNER_TEMP/export/Vibe.app" \
             -ov -format UDZO \
-            "$RUNNER_TEMP/VibeHost-${VERSION}.dmg"
-          echo "DMG_PATH=$RUNNER_TEMP/VibeHost-${VERSION}.dmg" >> "$GITHUB_ENV"
+            "$RUNNER_TEMP/Vibe-${VERSION}.dmg"
+          echo "DMG_PATH=$RUNNER_TEMP/Vibe-${VERSION}.dmg" >> "$GITHUB_ENV"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
       - name: Notarize DMG
@@ -274,7 +274,7 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
-          DMG_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/VibeHost-${VERSION}.dmg"
+          DMG_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/Vibe-${VERSION}.dmg"
           cat > appcast.xml <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
@@ -300,8 +300,8 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VibeHost-dmg
-          path: "${{ runner.temp }}/VibeHost-*.dmg"
+          name: Vibe-dmg
+          path: "${{ runner.temp }}/Vibe-*.dmg"
 
       - name: Upload appcast artifact
         uses: actions/upload-artifact@v4
@@ -341,7 +341,7 @@ jobs:
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
 
-          DMG=$(find artifacts/VibeHost-dmg -name "*.dmg" | head -1)
+          DMG=$(find artifacts/Vibe-dmg -name "*.dmg" | head -1)
           MACOS_CLI=$(find artifacts/vibe-macos-universal -name "*.tar.gz" | head -1)
           LINUX_CLI=$(find artifacts/vibe-linux-x86_64 -name "*.tar.gz" | head -1)
           APPCAST=$(find artifacts/appcast -name "appcast.xml" | head -1)

@@ -1,7 +1,7 @@
 import SwiftUI
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.VibeHost", category: "ProjectDetail")
+private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "ProjectDetail")
 
 /// Detail view for a single project.
 struct ProjectDetailView: View {

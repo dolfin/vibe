@@ -55,7 +55,7 @@ cargo run --bin vibe -- revert <package>   # Strip _vibe_state/ from package
 | `vibe-cli` | Rust | `apps/cli/` | Package, sign, verify, inspect `.vibeapp` files |
 | `vibe-manifest` | Rust | `libs/manifest/` | Manifest struct, YAML parsing, validation |
 | `vibe-signing` | Rust | `libs/signing/` | Ed25519 keygen, sign, verify, SHA-256 hashing |
-| `VibeHost` | Swift | `apps/mac-host/` | macOS UI, VM lifecycle, project library |
+| `Vibe` (macOS) | Swift | `apps/mac-host/` | macOS UI, VM lifecycle, project library |
 | VM image | Shell | `vm-image/` | Alpine Linux builder (no Docker required) |
 
 ### Packaging & signing flow
