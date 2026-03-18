@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import Darwin
+import Sparkle
 
 extension UTType {
     static let vibeApp = UTType("ninja.gil.vibe.vibeapp")!
@@ -15,6 +16,9 @@ struct VibeHostApp: App {
     @State private var libraryRuntime = RuntimeState()
     @State private var selectedProject: Project?
     @State private var pendingPackageURL: URL?
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
+    )
 
     init() {
         // Ignore SIGPIPE so write() to a closed socket returns EPIPE instead of
@@ -34,6 +38,12 @@ struct VibeHostApp: App {
         }
         .environment(vaultStore)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    updaterController.updater.checkForUpdates()
+                }
+                .disabled(!updaterController.updater.canCheckForUpdates)
+            }
             DeveloperCommands()
             ViewCommands()
         }

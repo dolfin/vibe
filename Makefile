@@ -1,4 +1,4 @@
-.PHONY: bootstrap build test lint fmt clean bundle-vm demo-packages demo-verify
+.PHONY: bootstrap build test lint fmt clean bundle-vm demo-packages demo-verify release-cli release-app
 
 bootstrap:
 	@echo "==> Installing Rust toolchain components..."
@@ -67,6 +67,25 @@ demo-verify: demo-packages
 		cargo run --bin vibe -- verify $$pkg --key build/demo/demo-signing.pub; \
 	done
 	@echo "==> All demo packages verified."
+
+release-cli:
+	@echo "==> Building release CLI..."
+	cargo build --release
+	@echo "==> CLI binary at target/release/vibe"
+
+release-app:
+	@echo "==> Archiving macOS app..."
+	xcodebuild archive \
+		-project apps/mac-host/VibeHost.xcodeproj \
+		-scheme VibeHost \
+		-configuration Release \
+		-archivePath build/VibeHost.xcarchive
+	@echo "==> Exporting archive..."
+	xcodebuild -exportArchive \
+		-archivePath build/VibeHost.xcarchive \
+		-exportOptionsPlist apps/mac-host/ExportOptions.plist \
+		-exportPath build/export/
+	@echo "==> App exported to build/export/"
 
 clean:
 	cargo clean

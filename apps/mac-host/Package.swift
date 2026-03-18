@@ -9,6 +9,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/weichsel/ZIPFoundation.git", from: "0.9.0"),
         .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
     ],
     targets: [
         .executableTarget(
@@ -16,6 +17,7 @@ let package = Package(
             dependencies: [
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
                 .product(name: "Yams", package: "Yams"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "VibeHost",
             exclude: ["Info.plist", "VibeHost.entitlements", "Assets.xcassets", "VibeAppDocument.icns"],

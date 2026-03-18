@@ -1,0 +1,444 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  VERSION: ${{ github.ref_name }}
+
+jobs:
+  # ── Tests ──────────────────────────────────────────────────────────────────
+
+  test-rust:
+    name: Test (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - run: cargo build --workspace
+      - run: cargo test --workspace
+      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo fmt --all -- --check
+
+  test-swift:
+    name: Test (Swift)
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: apps/mac-host
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: apps/mac-host/.build
+          key: ${{ runner.os }}-swift-${{ hashFiles('apps/mac-host/Package.resolved') }}
+          restore-keys: ${{ runner.os }}-swift-
+
+      - run: swift build
+      - run: swift test
+
+  # ── CLI builds ─────────────────────────────────────────────────────────────
+
+  build-cli:
+    name: Build CLI (${{ matrix.target }})
+    needs: [test-rust, test-swift]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact: vibe-aarch64-apple-darwin
+          - os: macos-14
+            target: x86_64-apple-darwin
+            artifact: vibe-x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: vibe-x86_64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --bin vibe
+
+      - name: Stage binary
+        run: cp target/${{ matrix.target }}/release/vibe vibe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: vibe
+
+  # ── Universal macOS CLI ────────────────────────────────────────────────────
+
+  create-universal-cli:
+    name: Create Universal CLI
+    needs: build-cli
+    runs-on: macos-14
+    steps:
+      - name: Download arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: vibe-aarch64-apple-darwin
+          path: bin-arm64
+
+      - name: Download x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: vibe-x86_64-apple-darwin
+          path: bin-x86_64
+
+      - name: Create universal binary
+        run: |
+          lipo -create \
+            -output vibe \
+            bin-arm64/vibe \
+            bin-x86_64/vibe
+          chmod +x vibe
+
+      - name: Package universal tarball
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          tar czf "vibe-${VERSION}-macos-universal.tar.gz" vibe
+
+      - name: Upload universal tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibe-macos-universal
+          path: "vibe-*-macos-universal.tar.gz"
+
+  # ── Linux CLI tarball ──────────────────────────────────────────────────────
+
+  package-linux-cli:
+    name: Package Linux CLI
+    needs: build-cli
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: vibe-x86_64-unknown-linux-gnu
+          path: bin-linux
+
+      - name: Package Linux tarball
+        run: |
+          cp bin-linux/vibe vibe
+          chmod +x vibe
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          tar czf "vibe-${VERSION}-linux-x86_64.tar.gz" vibe
+
+      - name: Upload Linux tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibe-linux-x86_64
+          path: "vibe-*-linux-x86_64.tar.gz"
+
+  # ── macOS App (sign, notarize, DMG) ───────────────────────────────────────
+
+  build-mac-app:
+    name: Build macOS App
+    needs: [test-rust, test-swift]
+    runs-on: macos-14
+    env:
+      KEYCHAIN_NAME: release.keychain
+      KEYCHAIN_PASSWORD: ci-temp-keychain
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: apps/mac-host/.build
+          key: ${{ runner.os }}-swift-${{ hashFiles('apps/mac-host/Package.resolved') }}
+          restore-keys: ${{ runner.os }}-swift-
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 -d > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_NAME"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          security import certificate.p12 \
+            -k "$KEYCHAIN_NAME" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/xcodebuild
+          security list-keychains -d user -s "$KEYCHAIN_NAME" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          rm -f certificate.p12
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project apps/mac-host/VibeHost.xcodeproj \
+            -scheme VibeHost \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/VibeHost.xcarchive" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_NAME"
+
+      - name: Export archive
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/VibeHost.xcarchive" \
+            -exportOptionsPlist apps/mac-host/ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export"
+
+      - name: Create DMG
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          hdiutil create \
+            -volname "Vibe" \
+            -srcfolder "$RUNNER_TEMP/export/VibeHost.app" \
+            -ov -format UDZO \
+            "$RUNNER_TEMP/VibeHost-${VERSION}.dmg"
+          echo "DMG_PATH=$RUNNER_TEMP/VibeHost-${VERSION}.dmg" >> "$GITHUB_ENV"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "$DMG_PATH"
+
+      - name: Install Sparkle tools
+        run: |
+          SPARKLE_VERSION="2.6.4"
+          curl -L "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
+            -o sparkle.tar.xz
+          mkdir -p sparkle
+          tar xf sparkle.tar.xz -C sparkle
+
+      - name: Sign DMG with Sparkle EdDSA
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          echo "$SPARKLE_PRIVATE_KEY" | base64 -d > sparkle_private_key
+          SPARKLE_SIG=$(./sparkle/bin/sign_update "$DMG_PATH" --ed-key-file sparkle_private_key)
+          rm -f sparkle_private_key
+          echo "SPARKLE_SIG=${SPARKLE_SIG}" >> "$GITHUB_ENV"
+          DMG_SIZE=$(wc -c < "$DMG_PATH" | tr -d ' ')
+          echo "DMG_SIZE=${DMG_SIZE}" >> "$GITHUB_ENV"
+
+      - name: Generate appcast.xml
+        run: |
+          TAG="${{ github.ref_name }}"
+          PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
+          DMG_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/VibeHost-${VERSION}.dmg"
+          cat > appcast.xml <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>Vibe</title>
+              <link>https://github.com/dolfin/vibe</link>
+              <item>
+                <title>Version ${VERSION}</title>
+                <pubDate>${PUB_DATE}</pubDate>
+                <sparkle:version>${VERSION}</sparkle:version>
+                <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+                <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+                <enclosure
+                  url="${DMG_URL}"
+                  sparkle:edSignature="${SPARKLE_SIG}"
+                  length="${DMG_SIZE}"
+                  type="application/octet-stream"/>
+              </item>
+            </channel>
+          </rss>
+          EOF
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibeHost-dmg
+          path: "${{ runner.temp }}/VibeHost-*.dmg"
+
+      - name: Upload appcast artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: appcast
+          path: appcast.xml
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain "$KEYCHAIN_NAME" || true
+
+  # ── GitHub Release ─────────────────────────────────────────────────────────
+
+  github-release:
+    name: Publish GitHub Release
+    needs: [create-universal-cli, package-linux-cli, build-mac-app]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+
+          DMG=$(find artifacts/VibeHost-dmg -name "*.dmg" | head -1)
+          MACOS_CLI=$(find artifacts/vibe-macos-universal -name "*.tar.gz" | head -1)
+          LINUX_CLI=$(find artifacts/vibe-linux-x86_64 -name "*.tar.gz" | head -1)
+          APPCAST=$(find artifacts/appcast -name "appcast.xml" | head -1)
+
+          gh release create "$TAG" \
+            --title "Vibe $VERSION" \
+            --notes "$(git tag -l --format='%(contents)' $TAG)" \
+            "$DMG" \
+            "$MACOS_CLI" \
+            "$LINUX_CLI" \
+            "$APPCAST"
+
+      - name: Update docs/appcast.xml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APPCAST=$(find artifacts/appcast -name "appcast.xml" | head -1)
+          cp "$APPCAST" docs/appcast.xml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/appcast.xml
+          git commit -m "chore: update appcast.xml for ${{ github.ref_name }}"
+          git push origin HEAD:main
+
+  # ── Homebrew tap ──────────────────────────────────────────────────────────
+
+  update-homebrew:
+    name: Update Homebrew Tap
+    needs: github-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download universal CLI tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: vibe-macos-universal
+          path: artifacts
+
+      - name: Download Linux CLI tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: vibe-linux-x86_64
+          path: artifacts
+
+      - name: Compute checksums
+        run: |
+          MACOS_TARBALL=$(find artifacts -name "*macos-universal*" | head -1)
+          LINUX_TARBALL=$(find artifacts -name "*linux-x86_64*" | head -1)
+          MACOS_SHA256=$(sha256sum "$MACOS_TARBALL" | awk '{print $1}')
+          LINUX_SHA256=$(sha256sum "$LINUX_TARBALL" | awk '{print $1}')
+          echo "MACOS_SHA256=${MACOS_SHA256}" >> "$GITHUB_ENV"
+          echo "LINUX_SHA256=${LINUX_SHA256}" >> "$GITHUB_ENV"
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: dolfin/homebrew-vibe
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-vibe
+
+      - name: Update Formula
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          MACOS_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/vibe-${VERSION}-macos-universal.tar.gz"
+          LINUX_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/vibe-${VERSION}-linux-x86_64.tar.gz"
+
+          cat > homebrew-vibe/Formula/vibe.rb <<EOF
+          class Vibe < Formula
+            desc "CLI for packaging, signing, and managing Vibe apps"
+            homepage "https://github.com/dolfin/vibe"
+            version "${VERSION}"
+
+            on_macos do
+              url "${MACOS_URL}"
+              sha256 "${MACOS_SHA256}"
+            end
+
+            on_linux do
+              url "${LINUX_URL}"
+              sha256 "${LINUX_SHA256}"
+            end
+
+            def install
+              bin.install "vibe"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/vibe --version")
+            end
+          end
+          EOF
+
+      - name: Commit and push formula
+        run: |
+          cd homebrew-vibe
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/vibe.rb
+          git commit -m "vibe ${{ github.ref_name }}"
+          git push

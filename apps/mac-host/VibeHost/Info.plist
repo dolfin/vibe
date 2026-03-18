@@ -19,6 +19,12 @@
 			<string>VibeAppDocument</string>
 		</dict>
 	</array>
+	<key>SUFeedURL</key>
+	<string>https://dolfin.github.io/vibe/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>IziMlGkYTpxirsLJHSjmTwpoSxPQHzEkEs5XxmP8tf8=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
