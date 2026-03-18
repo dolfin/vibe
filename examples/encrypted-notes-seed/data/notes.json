@@ -1,0 +1,17 @@
+[
+  {
+    "id": "a1b2c3d4-0001-0000-0000-000000000001",
+    "text": "Welcome to Encrypted Notes! This package is protected with AES-256-GCM + Argon2id.",
+    "createdAt": "2026-03-18T09:00:00.000Z"
+  },
+  {
+    "id": "a1b2c3d4-0002-0000-0000-000000000002",
+    "text": "State snapshots are saved every 30 seconds — your data is always safe.",
+    "createdAt": "2026-03-18T09:01:00.000Z"
+  },
+  {
+    "id": "a1b2c3d4-0003-0000-0000-000000000003",
+    "text": "Try adding and deleting notes to exercise the save/restore flow.",
+    "createdAt": "2026-03-18T09:02:00.000Z"
+  }
+]

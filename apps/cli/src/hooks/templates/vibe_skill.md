@@ -116,14 +116,43 @@ vibe keygen -o signing           # one-time: generate signing.key + signing.pub
 vibe sign app.vibeapp --key signing.key # sign the package
 vibe verify app.vibeapp --key signing.pub  # verify signature
 vibe inspect app.vibeapp         # show manifest + file listing
+vibe revert app.vibeapp          # strip saved state, restore original
 ```
+
+## Password Protection
+
+All commands that read or write `.vibeapp` files accept these flags:
+
+```
+--password <pass>        Use directly (avoid: visible in shell history)
+--password-file <path>   Read password from file (suitable for CI)
+(neither)                Interactive prompt — most secure, not logged
+```
+
+```bash
+# Create a password-protected package
+vibe package vibe.yaml -o app.vibeapp --password hunter2
+
+# Inspect / verify / sign / revert an encrypted package
+vibe inspect app.vibeapp --password hunter2
+vibe verify  app.vibeapp --key signing.pub --password hunter2
+vibe sign    app.vibeapp --key signing.key --password hunter2
+vibe revert  app.vibeapp --password hunter2
+
+# Omit the flag to be prompted interactively
+vibe inspect app.vibeapp
+```
+
+- Unencrypted packages: `--password` is silently ignored.
+- Wrong password: command fails with `"Wrong password or corrupted package"`.
+- The host app detects encryption automatically and shows a password dialog.
 
 ## Packaging Workflow (step-by-step)
 
 1. Check `vibe.yaml` exists; if not, run `vibe init <name>` first
 2. Run `vibe validate vibe.yaml` — fix all errors before proceeding
 3. Derive output filename from `id` last segment (e.g. `com.example.todo` → `todo.vibeapp`)
-4. Run `vibe package vibe.yaml -o <name>.vibeapp`
+4. Run `vibe package vibe.yaml -o <name>.vibeapp` (add `--password` to encrypt)
 5. If `signing.key` exists → run `vibe sign <name>.vibeapp --key signing.key`
 6. Run `vibe inspect <name>.vibeapp` — confirm contents
 7. If no signing key, remind: run `vibe keygen -o signing` to generate one

@@ -1,4 +1,3 @@
-use std::fs;
 use std::io::Read;
 use std::path::Path;
 
@@ -6,14 +5,23 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use zip::read::ZipArchive;
 
-pub fn run(package_path: &Path) -> Result<()> {
+pub fn run(
+    package_path: &Path,
+    password: Option<&str>,
+    password_file: Option<&Path>,
+) -> Result<()> {
     println!(
         "Inspecting {}...\n",
         package_path.display().to_string().cyan()
     );
 
-    let zip_data = fs::read(package_path)
-        .with_context(|| format!("Failed to read package '{}'", package_path.display()))?;
+    let is_encrypted = crate::crypto::is_encrypted_package(package_path);
+    if is_encrypted {
+        println!("{} Encrypted package", "🔒".yellow());
+    }
+
+    let zip_data = crate::crypto::open_package(package_path, password, password_file)?;
+
     let cursor = std::io::Cursor::new(&zip_data);
     let mut archive = ZipArchive::new(cursor).context("Failed to open package as ZIP archive")?;
 

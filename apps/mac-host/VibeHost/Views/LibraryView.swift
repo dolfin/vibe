@@ -56,6 +56,11 @@ private struct ProjectCard: View {
                     .font(.title2)
                     .foregroundStyle(.blue)
                 Spacer()
+                if project.isEncrypted {
+                    Image(systemName: "lock.fill")
+                        .foregroundStyle(.purple)
+                        .font(.caption)
+                }
                 TrustBadge(status: project.trustStatus)
             }
 

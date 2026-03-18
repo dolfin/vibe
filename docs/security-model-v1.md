@@ -2,6 +2,71 @@
 
 Version: v1
 
+## Package Encryption
+
+`.vibeapp` packages can be password-protected using AES-256-GCM encryption with Argon2id key derivation. This prevents inspection of the manifest, assets, and seed data by anyone without the password.
+
+### Encryption Format
+
+An encrypted `.vibeapp` is a ZIP containing exactly two entries:
+
+| Entry | Contents |
+|---|---|
+| `_vibe_encryption.json` | KDF and cipher metadata |
+| `_vibe_encrypted_payload` | AES-256-GCM ciphertext (16-byte GCM tag appended) |
+
+The **plaintext** is the complete inner `.vibeapp` ZIP. Encryption is applied as an outer wrapper — the inner package structure is preserved intact after decryption.
+
+`_vibe_encryption.json` schema:
+```json
+{
+  "version": 1,
+  "cipher": "aes-256-gcm",
+  "kdf": "argon2id",
+  "kdf_params": {
+    "m_cost": 65536,
+    "t_cost": 3,
+    "p_cost": 4,
+    "salt": "<64 hex chars>"
+  },
+  "nonce": "<24 hex chars>"
+}
+```
+
+**KDF parameters** follow the OWASP interactive profile: m=65536 (64 MiB), t=3, p=4. A fresh random 32-byte salt and 12-byte nonce are generated on every encryption.
+
+### CLI Usage
+
+```bash
+# Create an encrypted package
+vibe package vibe.yaml -o app.vibeapp --password <pass>
+vibe package vibe.yaml -o app.vibeapp --password-file secrets/pw.txt
+
+# Inspect / verify / sign / revert — all accept the same flags
+vibe inspect app.vibeapp --password <pass>
+vibe verify  app.vibeapp --key signing.pub --password <pass>
+vibe sign    app.vibeapp --key signing.key --password <pass>
+vibe revert  app.vibeapp --password <pass>
+
+# Omit --password to be prompted interactively (most secure — not stored in shell history)
+vibe inspect app.vibeapp
+```
+
+### Host App Behaviour
+
+1. On open, the host detects `_vibe_encryption.json` and shows a password prompt.
+2. The package is decrypted in memory; plain bytes are never written to disk.
+3. On every auto-save (every 30 s) and explicit save, the package is re-encrypted with the same password and a fresh random nonce before being written.
+4. The password is held in memory for the document session and cleared on close.
+
+### Security Properties
+
+- Wrong password or corrupted ciphertext → decryption fails with a clear error; the app is never opened.
+- Each encryption call produces unique ciphertext (fresh salt + nonce), so repeated saves are not linkable.
+- The encryption wrapper is independent of the trust/signature model — a package can be encrypted **and** signed.
+
+---
+
 ## Trust Model
 
 Every `.vibeapp` package is assigned one of four trust states at open time.

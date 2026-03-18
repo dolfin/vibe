@@ -258,8 +258,14 @@ struct ProjectDetailView: View {
 
     private var trustSection: some View {
         GroupBox("Trust Status") {
-            HStack {
+            HStack(spacing: 10) {
                 TrustBadge(status: project.trustStatus)
+                if project.isEncrypted {
+                    Divider().frame(height: 14)
+                    Label("Encrypted", systemImage: "lock.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                }
                 Spacer()
             }
             .padding(.vertical, 4)

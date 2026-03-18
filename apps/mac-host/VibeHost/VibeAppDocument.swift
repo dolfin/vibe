@@ -8,8 +8,11 @@ struct VibeAppDocument: FileDocument {
     static var writableContentTypes: [UTType] { [.vibeApp] }
 
     let project: Project
-    /// Current in-memory archive bytes. Updated by the save flow when state is snapshotted.
+    /// Current in-memory archive bytes (always plain/unencrypted ZIP).
+    /// Updated by the save flow when state is snapshotted.
     var rawPackageData: Data
+    /// Set if the package was encrypted on open. Used to re-encrypt on every save.
+    var encryptionContext: EncryptionContext?
 
     // MARK: - Open existing file
 
@@ -18,23 +21,46 @@ struct VibeAppDocument: FileDocument {
             throw CocoaError(.fileReadCorruptFile)
         }
 
+        // Detect + decrypt encrypted packages before any extraction
+        let innerData: Data
+        var ctx: EncryptionContext?
+
+        if PackageDecryption.isEncrypted(data) {
+            let packageName = configuration.file.filename ?? "this package"
+            guard let password = PackageDecryption.promptPassword(forPackage: packageName) else {
+                throw CocoaError(.userCancelled)
+            }
+            do {
+                innerData = try PackageDecryption.decrypt(data, password: password)
+                ctx = EncryptionContext(password: password)
+            } catch {
+                throw CocoaError(
+                    .fileReadCorruptFile,
+                    userInfo: [NSLocalizedDescriptionKey: error.localizedDescription]
+                )
+            }
+        } else {
+            innerData = data
+        }
+
         // Persist any _vibe_state/* entries from the file into the cache before
         // cachePackage strips them. Hash is now derived from _vibe_package_manifest.json
         // so it stays stable even after a save rewrites the ZIP with state entries.
-        let stateEntries = PackageExtractor.extractStateEntries(from: data)
+        let stateEntries = PackageExtractor.extractStateEntries(from: innerData)
 
-        let pkg = try PackageExtractor.extract(data: data)
+        let pkg = try PackageExtractor.extract(data: innerData)
         let demoKey = Bundle.main.url(forResource: "demo-signing", withExtension: "pub")
             .flatMap { try? Data(contentsOf: $0) }
         let trust = PackageVerifier.verifyTrust(package: pkg, publicKey: demoKey)
-        let cacheHash = try StorageManager.cachePackage(data: data)
+        let cacheHash = try StorageManager.cachePackage(data: innerData)
 
         // Seed state cache from whatever was in the file (preserves state across re-opens)
         if !stateEntries.isEmpty {
             StorageManager.saveState(stateEntries, for: cacheHash)
         }
 
-        rawPackageData = data
+        rawPackageData = innerData
+        encryptionContext = ctx
         project = Project(
             id: UUID(),
             appId: pkg.packageManifest.appId,
@@ -49,7 +75,8 @@ struct VibeAppDocument: FileDocument {
             originalPackagePath: nil,
             files: pkg.packageManifest.files,
             formatVersion: pkg.packageManifest.formatVersion,
-            createdAt: pkg.packageManifest.createdAt
+            createdAt: pkg.packageManifest.createdAt,
+            isEncrypted: ctx != nil
         )
     }
 
@@ -59,6 +86,7 @@ struct VibeAppDocument: FileDocument {
     /// In practice users always open existing .vibeapp files; this state is never persisted.
     init() {
         rawPackageData = Data()
+        encryptionContext = nil
         project = Project(
             id: UUID(),
             appId: "",
@@ -80,6 +108,11 @@ struct VibeAppDocument: FileDocument {
     // MARK: - Write
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: rawPackageData)
+        // Re-encrypt before writing if the package was originally encrypted
+        if let ctx = encryptionContext {
+            let encrypted = try PackageDecryption.encrypt(rawPackageData, password: ctx.password)
+            return FileWrapper(regularFileWithContents: encrypted)
+        }
+        return FileWrapper(regularFileWithContents: rawPackageData)
     }
 }

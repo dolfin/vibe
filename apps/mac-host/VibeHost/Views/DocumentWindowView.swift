@@ -92,6 +92,7 @@ struct DocumentWindowView: View {
                         project: project,
                         runtime: runtime,
                         fileURL: fileURL,
+                        rawPackageSize: document.rawPackageData.count,
                         schemeHandler: $schemeHandler,
                         webViewID: $webViewID
                     )
@@ -146,7 +147,7 @@ struct DocumentWindowView: View {
                 }
             }
             .frame(minWidth: 800, minHeight: 600)
-            .focusedValue(\.vibeDocumentContext, VibeDocumentContext(
+            .focusedSceneValue(\.vibeDocumentContext, VibeDocumentContext(
                 project: project,
                 fileURL: fileURL,
                 revert: { await revertAction() }
@@ -453,6 +454,8 @@ private struct ProjectInfoSheet: View {
     let project: Project
     let runtime: RuntimeState
     let fileURL: URL?
+    /// Current in-memory package size (base + embedded state). Used for the Saved Data size row.
+    let rawPackageSize: Int
     @Binding var schemeHandler: VibeSchemeHandler?
     @Binding var webViewID: UUID
     @Environment(\.dismiss) private var dismiss
@@ -556,15 +559,18 @@ private struct ProjectInfoSheet: View {
                     GroupBox("Saved Data") {
                         VStack(spacing: 6) {
                             let info = stateInfo
-                            if info.totalBytes > 0 || info.lastSaved != nil {
-                                infoRow("Size", formatBytes(info.totalBytes))
+                            if rawPackageSize > 0 {
+                                infoRow("Size", formatBytes(rawPackageSize))
+                            }
+                            if info.lastSaved != nil {
                                 infoRow(
                                     "Last Saved",
                                     info.lastSaved.map {
                                         $0.formatted(date: .abbreviated, time: .shortened)
                                     } ?? "—"
                                 )
-                            } else {
+                            }
+                            if rawPackageSize == 0 && info.lastSaved == nil {
                                 Text("No saved data")
                                     .foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -575,8 +581,14 @@ private struct ProjectInfoSheet: View {
 
                     // Trust
                     GroupBox("Trust Status") {
-                        HStack {
+                        HStack(spacing: 10) {
                             TrustBadge(status: project.trustStatus)
+                            if project.isEncrypted {
+                                Divider().frame(height: 14)
+                                Label("Encrypted", systemImage: "lock.fill")
+                                    .foregroundStyle(.secondary)
+                                    .font(.subheadline)
+                            }
                             Spacer()
                         }
                         .padding(.vertical, 4)
@@ -729,6 +741,8 @@ struct VibeDocumentContextKey: FocusedValueKey {
 }
 
 extension FocusedValues {
+    // Scene-scoped so the value stays visible to Commands even when a native
+    // view (WKWebView) holds first responder and breaks SwiftUI's focus chain.
     var vibeDocumentContext: VibeDocumentContext? {
         get { self[VibeDocumentContextKey.self] }
         set { self[VibeDocumentContextKey.self] = newValue }

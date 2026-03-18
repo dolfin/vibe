@@ -56,6 +56,14 @@ demo-packages: build
 		cargo run --bin vibe -- package $$dir/vibe.yaml -o build/demo/$$(basename $$dir).vibeapp; \
 		cargo run --bin vibe -- sign build/demo/$$(basename $$dir).vibeapp --key build/demo/demo-signing.key; \
 	done
+	@echo "  Packaging examples/encrypted-notes (password-protected)..."
+	cargo run --bin vibe -- package examples/encrypted-notes/vibe.yaml \
+		-o build/demo/encrypted-notes.vibeapp \
+		--seed-data examples/encrypted-notes-seed \
+		--password demo1234
+	cargo run --bin vibe -- sign build/demo/encrypted-notes.vibeapp \
+		--key build/demo/demo-signing.key \
+		--password demo1234
 	@echo "==> Copying public key to mac-host resources..."
 	cp build/demo/demo-signing.pub apps/mac-host/VibeHost/Resources/demo-signing.pub
 	@echo "==> Demo packages ready in build/demo/"
@@ -63,8 +71,13 @@ demo-packages: build
 demo-verify: demo-packages
 	@echo "==> Verifying demo packages..."
 	@for pkg in build/demo/*.vibeapp; do \
-		echo "  Verifying $$pkg..."; \
-		cargo run --bin vibe -- verify $$pkg --key build/demo/demo-signing.pub; \
+		if [ "$$(basename $$pkg)" = "encrypted-notes.vibeapp" ]; then \
+			echo "  Verifying $$pkg (encrypted)..."; \
+			cargo run --bin vibe -- verify $$pkg --key build/demo/demo-signing.pub --password demo1234; \
+		else \
+			echo "  Verifying $$pkg..."; \
+			cargo run --bin vibe -- verify $$pkg --key build/demo/demo-signing.pub; \
+		fi \
 	done
 	@echo "==> All demo packages verified."
 

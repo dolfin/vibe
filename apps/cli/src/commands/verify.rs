@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fs;
 use std::io::Read;
 use std::path::Path;
 
@@ -13,11 +12,16 @@ use vibe_signing::{
     compute_package_hash, verify_package, verifying_key_from_bytes, VerificationResult,
 };
 
-pub fn run(package_path: &Path, key_path: &Path) -> Result<()> {
+pub fn run(
+    package_path: &Path,
+    key_path: &Path,
+    password: Option<&str>,
+    password_file: Option<&Path>,
+) -> Result<()> {
     println!("Verifying {}...", package_path.display().to_string().cyan());
 
     // Read public key (32 bytes raw)
-    let key_bytes = fs::read(key_path)
+    let key_bytes = std::fs::read(key_path)
         .with_context(|| format!("Failed to read key file '{}'", key_path.display()))?;
     if key_bytes.len() != 32 {
         anyhow::bail!(
@@ -29,9 +33,9 @@ pub fn run(package_path: &Path, key_path: &Path) -> Result<()> {
     let verifying_key =
         verifying_key_from_bytes(&key_array).context("Failed to parse verifying key")?;
 
-    // Read the ZIP archive
-    let zip_data = fs::read(package_path)
-        .with_context(|| format!("Failed to read package '{}'", package_path.display()))?;
+    // Open package (decrypt in memory if encrypted)
+    let zip_data = crate::crypto::open_package(package_path, password, password_file)?;
+
     let cursor = std::io::Cursor::new(&zip_data);
     let mut archive = ZipArchive::new(cursor).context("Failed to open package as ZIP archive")?;
 

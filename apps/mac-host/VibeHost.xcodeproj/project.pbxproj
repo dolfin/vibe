@@ -11,6 +11,7 @@
 		8A58D7602F65C90E00CB8653 /* Yams in Frameworks */ = {isa = PBXBuildFile; productRef = AA000052AAAA000100000001 /* Yams */; };
 		8A58D7612F65C90E00CB8654 /* Virtualization.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A58D7622F65C90E00CB8654 /* Virtualization.framework */; };
 		8A58D7632F65C90E00CB8653 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AA000054AAAA000100000001 /* Sparkle */; };
+		8A58D7652F65C90E00CB8655 /* Argon2Swift in Frameworks */ = {isa = PBXBuildFile; productRef = AA000056AAAA000100000001 /* Argon2Swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +65,7 @@
 				8A58D75F2F65C90E00CB8653 /* ZIPFoundation in Frameworks */,
 				8A58D7612F65C90E00CB8654 /* Virtualization.framework in Frameworks */,
 				8A58D7632F65C90E00CB8653 /* Sparkle in Frameworks */,
+				8A58D7652F65C90E00CB8655 /* Argon2Swift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -127,6 +129,7 @@
 				AA000050AAAA000100000001 /* ZIPFoundation */,
 				AA000052AAAA000100000001 /* Yams */,
 				AA000054AAAA000100000001 /* Sparkle */,
+				AA000056AAAA000100000001 /* Argon2Swift */,
 			);
 			productName = Vibe;
 			productReference = AA000004AAAA000100000001 /* Vibe.app */;
@@ -187,6 +190,7 @@
 				AA000060AAAA000100000001 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				AA000062AAAA000100000001 /* XCRemoteSwiftPackageReference "Yams" */,
 				AA000064AAAA000100000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				AA000066AAAA000100000001 /* XCRemoteSwiftPackageReference "Argon2Swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AA000007AAAA000100000001 /* Products */;
@@ -513,6 +517,14 @@
 				minimumVersion = 2.6.0;
 			};
 		};
+		AA000066AAAA000100000001 /* XCRemoteSwiftPackageReference "Argon2Swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tmthecoder/Argon2Swift.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -530,6 +542,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA000064AAAA000100000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		AA000056AAAA000100000001 /* Argon2Swift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000066AAAA000100000001 /* XCRemoteSwiftPackageReference "Argon2Swift" */;
+			productName = Argon2Swift;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

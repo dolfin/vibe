@@ -39,11 +39,14 @@ cargo run --bin vibe -- --help
 cargo run --bin vibe -- init <name>
 cargo run --bin vibe -- validate [vibe.yaml]
 cargo run --bin vibe -- package <manifest> -o out.vibeapp
+cargo run --bin vibe -- package <manifest> -o out.vibeapp --password <pass>   # encrypted
 cargo run --bin vibe -- sign <package> --key signing.key
 cargo run --bin vibe -- verify <package> --key signing.pub
 cargo run --bin vibe -- keygen -o output
 cargo run --bin vibe -- inspect <package>
+cargo run --bin vibe -- inspect <package> --password <pass>   # encrypted package
 cargo run --bin vibe -- revert <package>   # Strip _vibe_state/ from package
+# --password / --password-file accepted by all commands; omit to prompt interactively
 ```
 
 ## Architecture

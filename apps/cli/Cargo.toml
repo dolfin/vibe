@@ -19,6 +19,10 @@ zip = { workspace = true }
 colored = { workspace = true }
 chrono = { workspace = true }
 ed25519-dalek = { workspace = true }
+aes-gcm = { workspace = true }
+argon2 = { workspace = true }
+rand = { workspace = true }
+rpassword = "7"
 
 [dev-dependencies]
 tempfile = { workspace = true }

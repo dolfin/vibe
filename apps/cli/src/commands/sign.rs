@@ -12,7 +12,12 @@ use zip::ZipWriter;
 
 use vibe_signing::{compute_package_hash, sign_package, signing_key_from_bytes};
 
-pub fn run(package_path: &Path, key_path: &Path) -> Result<()> {
+pub fn run(
+    package_path: &Path,
+    key_path: &Path,
+    password: Option<&str>,
+    password_file: Option<&Path>,
+) -> Result<()> {
     println!("Signing {}...", package_path.display().to_string().cyan());
 
     // Read private key (32 bytes raw)
@@ -27,9 +32,22 @@ pub fn run(package_path: &Path, key_path: &Path) -> Result<()> {
     let key_array: [u8; 32] = key_bytes.try_into().unwrap();
     let signing_key = signing_key_from_bytes(&key_array).context("Failed to parse signing key")?;
 
-    // Read the ZIP archive
-    let zip_data = fs::read(package_path)
-        .with_context(|| format!("Failed to read package '{}'", package_path.display()))?;
+    // Resolve password once upfront (avoids double-prompting for interactive mode)
+    let is_encrypted = crate::crypto::is_encrypted_package(package_path);
+    let resolved_pw: Option<String> = if is_encrypted {
+        Some(crate::crypto::resolve_password(
+            password,
+            password_file,
+            "Password: ",
+        )?)
+    } else {
+        None
+    };
+    let pw_ref = resolved_pw.as_deref();
+
+    // Open package (decrypt if encrypted)
+    let zip_data = crate::crypto::open_package(package_path, pw_ref, None)?;
+
     let cursor = std::io::Cursor::new(&zip_data);
     let mut archive = ZipArchive::new(cursor).context("Failed to open package as ZIP archive")?;
 
@@ -62,20 +80,18 @@ pub fn run(package_path: &Path, key_path: &Path) -> Result<()> {
     let signature: Signature = sign_package(&package_hash, &signing_key);
     let sig_bytes = signature.to_bytes();
 
-    // Re-create the zip with the signature included
+    // Re-create the inner zip with the signature included
     let mut new_zip_data = Vec::new();
     {
         let mut zip_writer = ZipWriter::new(std::io::Cursor::new(&mut new_zip_data));
         let options =
             SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-        // Collect all existing entries and add signature, sorted alphabetically
         let mut all_entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)?;
             let name = file.name().to_string();
-            // Skip any existing signature
             if name == "_vibe_signature.sig" {
                 continue;
             }
@@ -94,13 +110,19 @@ pub fn run(package_path: &Path, key_path: &Path) -> Result<()> {
         zip_writer.finish()?;
     }
 
-    // Write the new zip back to the package path
-    fs::write(package_path, &new_zip_data).with_context(|| {
-        format!(
-            "Failed to write signed package to '{}'",
-            package_path.display()
-        )
-    })?;
+    // Write back: re-encrypt if original was encrypted, otherwise write plain
+    if let Some(pw) = resolved_pw {
+        let (ciphertext, enc_meta) =
+            crate::crypto::encrypt_package(&new_zip_data, pw.as_bytes())?;
+        crate::crypto::write_encrypted_vibeapp(&ciphertext, &enc_meta, package_path)?;
+    } else {
+        fs::write(package_path, &new_zip_data).with_context(|| {
+            format!(
+                "Failed to write signed package to '{}'",
+                package_path.display()
+            )
+        })?;
+    }
 
     println!("{} Package signed successfully!", "✓".green().bold());
     println!(

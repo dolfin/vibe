@@ -23,7 +23,13 @@ struct PackageManifest {
     files: BTreeMap<String, String>,
 }
 
-pub fn run(manifest_path: &Path, output: Option<&Path>, seed_data: Option<&Path>) -> Result<()> {
+pub fn run(
+    manifest_path: &Path,
+    output: Option<&Path>,
+    seed_data: Option<&Path>,
+    password: Option<&str>,
+    password_file: Option<&Path>,
+) -> Result<()> {
     println!(
         "Packaging from {}...",
         manifest_path.display().to_string().cyan()
@@ -144,36 +150,45 @@ pub fn run(manifest_path: &Path, output: Option<&Path>, seed_data: Option<&Path>
     let default_output = format!("{}-{}.vibeapp", app_id, app_version);
     let output_path = output.unwrap_or(Path::new(&default_output));
 
-    // Create deterministic ZIP
-    let zip_file = fs::File::create(output_path)
-        .with_context(|| format!("Failed to create '{}'", output_path.display()))?;
-    let mut zip = ZipWriter::new(zip_file);
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    // Build inner ZIP bytes in memory
+    let zip_bytes = {
+        let mut buf = Vec::new();
+        let mut zip = ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
-    // Collect all entries: files + package manifest, sorted alphabetically
-    let mut all_entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    all_entries.insert(
-        "_vibe_package_manifest.json".to_string(),
-        pkg_manifest_json.as_bytes().to_vec(),
-    );
-    for (rel_path, contents) in &file_entries {
-        all_entries.insert(rel_path.clone(), contents.clone());
-    }
+        // Collect all entries: files + package manifest, sorted alphabetically
+        let mut all_entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        all_entries.insert(
+            "_vibe_package_manifest.json".to_string(),
+            pkg_manifest_json.as_bytes().to_vec(),
+        );
+        for (rel_path, contents) in &file_entries {
+            all_entries.insert(rel_path.clone(), contents.clone());
+        }
 
-    for (name, contents) in &all_entries {
-        zip.start_file(name, options)
-            .with_context(|| format!("Failed to add '{}' to archive", name))?;
-        zip.write_all(contents)
-            .with_context(|| format!("Failed to write '{}' to archive", name))?;
-    }
+        for (name, contents) in &all_entries {
+            zip.start_file(name, options)
+                .with_context(|| format!("Failed to add '{}' to archive", name))?;
+            zip.write_all(contents)
+                .with_context(|| format!("Failed to write '{}' to archive", name))?;
+        }
+        zip.finish().context("Failed to finalize ZIP archive")?;
+        buf
+    };
 
-    zip.finish().context("Failed to finalize ZIP archive")?;
+    // Write (optionally encrypted) output
+    crate::crypto::save_package(&zip_bytes, output_path, password, password_file)?;
 
     // Print summary
+    let encrypted = password.is_some() || password_file.is_some();
     println!("{} Package created!", "✓".green().bold());
     println!("  {} {}", "Output:".dimmed(), output_path.display());
     println!("  {} {} ({})", "App:".dimmed(), app_id.cyan(), app_version);
     println!("  {} {} file(s)", "Files:".dimmed(), file_entries.len());
+    if encrypted {
+        println!("  {} {}", "Security:".dimmed(), "🔒 Encrypted".yellow());
+    }
 
     Ok(())
 }

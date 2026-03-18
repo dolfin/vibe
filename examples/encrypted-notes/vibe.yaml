@@ -1,0 +1,24 @@
+kind: vibe.app/v1
+id: com.example.encrypted-notes
+name: Encrypted Notes
+version: "1.0.0"
+
+services:
+  - name: web
+    image: node:22-alpine
+    command: ["node", "server.mjs"]
+    ports:
+      - container: 3000
+    mounts:
+      - source: data
+        target: /data
+
+state:
+  volumes:
+    - name: data
+
+security:
+  network: true
+
+publisher:
+  name: Vibe Examples
