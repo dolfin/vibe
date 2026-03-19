@@ -303,7 +303,7 @@ actor ProjectLifecycleManager {
             let q = DispatchQueue(label: "ninja.gil.Vibe.tcpProbe.\(port)")
             var done = false
 
-            func finish(_ result: Bool) {
+            @Sendable func finish(_ result: Bool) {
                 q.async {
                     guard !done else { return }
                     done = true

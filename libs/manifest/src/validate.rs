@@ -467,6 +467,7 @@ mod tests {
             security: None,
             secrets: None,
             publisher: None,
+            ui: None,
         };
         let errs = validate_manifest(&manifest).unwrap_err();
         assert!(errs
@@ -497,6 +498,7 @@ mod tests {
             security: None,
             secrets: None,
             publisher: None,
+            ui: None,
         };
         let errs = validate_manifest(&manifest).unwrap_err();
         assert!(errs
