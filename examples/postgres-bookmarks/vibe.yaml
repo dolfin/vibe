@@ -16,7 +16,7 @@ services:
 state:
   volumes:
     - name: data
-      consistency: generic
+      consistency: postgres
 
 security:
   network: true
