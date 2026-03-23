@@ -1,0 +1,38 @@
+kind: vibe.app/v1
+id: com.example.postgres-bookmarks-docker
+name: Bookmarks (Postgres + Docker)
+version: "1.0.0"
+
+services:
+  - name: db
+    image: postgres:16-alpine
+    env:
+      POSTGRES_DB: bookmarks
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    mounts:
+      - source: pgdata
+        target: /var/lib/postgresql/data
+
+  - name: web
+    image: node:20-alpine
+    command: ["sh", "-c", "cd /app && npm install --prefer-offline --no-fund --no-audit 2>&1 && node server.js"]
+    ports:
+      - container: 3000
+    dependOn:
+      - db
+    mounts:
+      - source: node_modules
+        target: /app/node_modules
+
+state:
+  volumes:
+    - name: pgdata
+      consistency: postgres
+    - name: node_modules
+
+security:
+  network: true
+
+publisher:
+  name: Vibe Examples
