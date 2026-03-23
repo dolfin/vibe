@@ -48,10 +48,13 @@ final class RuntimeState {
             try await VMManager.shared.ensureReady()
 
             let mgr = lifecycle(for: project)
+            statusMessages[project.id] = "Pulling images — first run may take a few minutes…"
             _ = try await mgr.prepare(project: project)
 
-            statusMessages[project.id] = "Pulling images — first run may take a few minutes…"
-            _ = try await mgr.start(projectId: project.id, secrets: secrets)
+            statusMessages[project.id] = "Starting containers…"
+            _ = try await mgr.start(projectId: project.id, secrets: secrets) { [weak self] msg in
+                self?.statusMessages[project.id] = msg
+            }
             statusMessages[project.id] = nil
             statuses[project.id] = .running
 

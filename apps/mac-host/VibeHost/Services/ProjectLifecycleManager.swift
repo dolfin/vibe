@@ -168,7 +168,7 @@ actor ProjectLifecycleManager {
     }
 
     /// Start all containers for a project.
-    func start(projectId: UUID, secrets: [String: String] = [:]) async throws -> ManagedState {
+    func start(projectId: UUID, secrets: [String: String] = [:], onStatus: (@Sendable (String) -> Void)? = nil) async throws -> ManagedState {
         guard var state = states[projectId] else {
             throw DockerError.commandFailed("Project not found in lifecycle manager")
         }
@@ -190,6 +190,10 @@ actor ProjectLifecycleManager {
         // Capture VM IP before the container loop so socat logging and waitForServices
         // can use it immediately.
         state.vmIP = await VMManager.shared.vmIP ?? "127.0.0.1"
+
+        // Track bridge IPs of started services so dependent services can reach them
+        // via VIBE_SVC_<NAME>_HOST env vars (e.g. VIBE_SVC_DB_HOST=10.88.0.2).
+        var startedServiceIPs: [String: String] = [:]
 
         for svc in state.services {
             do {
@@ -229,6 +233,12 @@ actor ProjectLifecycleManager {
             }
 
             var env = ["VIBE_PROJECT_ID": state.projectId]
+            // Inject bridge IPs of previously started services so this service can
+            // reach them by name (e.g. VIBE_SVC_DB_HOST=10.88.0.2).
+            for (depName, depIP) in startedServiceIPs {
+                let key = "VIBE_SVC_\(depName.uppercased().replacingOccurrences(of: "-", with: "_"))_HOST"
+                env[key] = depIP
+            }
             env.merge(secrets) { _, new in new }
 
             let spec = ContainerSpec(
@@ -239,7 +249,7 @@ actor ProjectLifecycleManager {
                 ports: portMappings,
                 volumes: volumes,
                 workingDir: "/app",
-                network: "bridge",
+                network: "vibe-bridge",
                 labels: [
                     "vibe.project": state.projectId,
                     "vibe.service": svc.name
@@ -247,6 +257,12 @@ actor ProjectLifecycleManager {
             )
 
             _ = try await ContainerRuntimeClient.runContainer(spec)
+
+            // Record this service's bridge IP for subsequent services.
+            if let ip = await ContainerRuntimeClient.containerIP(name: svc.containerName) {
+                startedServiceIPs[svc.name] = ip
+                logger.info("start[\(state.projectId)]: \(svc.name) bridge IP: \(ip)")
+            }
         }
 
         for i in state.services.indices {
@@ -258,7 +274,7 @@ actor ProjectLifecycleManager {
         // Wait until services are actually accepting connections before reporting ready.
         // The container runtime returns as soon as the container starts — the application
         // inside may take additional time to bind to its port.
-        await waitForServices(state: state)
+        try await waitForServices(state: state, onStatus: onStatus)
 
         logger.info("BENCH start[\(state.projectId)]: all containers running in \(String(format: "%.2f", -startTime.timeIntervalSinceNow))s")
         logger.info("Project started: \(state.projectId) with \(state.services.count) services")
@@ -268,13 +284,20 @@ actor ProjectLifecycleManager {
 
     /// Probe each service port via TCP until it accepts connections or the timeout elapses.
     /// Uses NWConnection instead of URLSession to avoid noisy system task error logs.
-    private func waitForServices(state: ManagedState, maxWaitSeconds: Double = 180) async {
-        let deadline = Date().addingTimeInterval(maxWaitSeconds)
+    /// Calls onStatus periodically with elapsed time and throws on timeout or container crash.
+    private func waitForServices(state: ManagedState, maxWaitSeconds: Double = 300, onStatus: (@Sendable (String) -> Void)? = nil) async throws {
+        let startDate = Date()
+        let deadline = startDate.addingTimeInterval(maxWaitSeconds)
         var pending = state.services.filter { $0.hostPort > 0 }
         guard !pending.isEmpty else { return }
 
+        var lastStatusUpdate = Date.distantPast
+        var probeCount = 0
+
         while !pending.isEmpty, Date() < deadline {
             try? await Task.sleep(for: .milliseconds(500))
+            probeCount += 1
+
             var stillWaiting: [ServiceRunState] = []
             for svc in pending {
                 if await tcpPortOpen(host: state.vmIP, port: svc.hostPort) {
@@ -284,10 +307,49 @@ actor ProjectLifecycleManager {
                 }
             }
             pending = stillWaiting
+            guard !pending.isEmpty else { break }
+
+            let now = Date()
+            if now.timeIntervalSince(lastStatusUpdate) >= 5 {
+                lastStatusUpdate = now
+                let elapsed = Int(-startDate.timeIntervalSinceNow)
+                let m = elapsed / 60, s = elapsed % 60
+                let elapsedStr = m > 0 ? "\(m)m \(s)s" : "\(s)s"
+                onStatus?("Waiting for services to be ready… (\(elapsedStr))")
+            }
+
+            // Every 30 seconds check whether containers are still alive.
+            if probeCount % 60 == 0 {
+                for svc in pending {
+                    guard let (out, _, status) = try? await ContainerRuntimeClient.ssh(
+                        ["nerdctl", "inspect", "--format", "{{.State.Status}}", svc.containerName]
+                    ), status == 0 else { continue }
+                    let containerStatus = out.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if containerStatus == "exited" || containerStatus == "dead" {
+                        let logs = (try? await ContainerRuntimeClient.ssh(
+                            ["nerdctl", "logs", "--tail", "50", svc.containerName]
+                        )).map { "\($0.stdout)\($0.stderr)" } ?? ""
+                        throw DockerError.commandFailed("Container '\(svc.name)' exited unexpectedly.\n\(logs)")
+                    }
+                }
+            }
         }
 
         if !pending.isEmpty {
             logger.warning("start[\(state.projectId)]: timed out waiting for \(pending.map(\.name).joined(separator: ", "))")
+            var logParts: [String] = []
+            for svc in pending {
+                if let (stdout, stderr, _) = try? await ContainerRuntimeClient.ssh(
+                    ["nerdctl", "logs", "--tail", "50", svc.containerName]
+                ) {
+                    let combined = (stdout + stderr).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !combined.isEmpty { logParts.append("[\(svc.name)]:\n\(combined)") }
+                }
+            }
+            let detail = logParts.isEmpty ? "" : "\n\n" + logParts.joined(separator: "\n\n")
+            throw DockerError.commandFailed(
+                "Services did not become ready within \(Int(maxWaitSeconds))s: \(pending.map(\.name).joined(separator: ", "))\(detail)"
+            )
         }
     }
 

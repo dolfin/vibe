@@ -108,7 +108,7 @@ enum ContainerRuntimeClient {
         for cap in droppedCaps {
             nerdctlArgs += ["--cap-drop", cap]
         }
-        nerdctlArgs += ["--memory", "512m", "--memory-swap", "512m"]
+        nerdctlArgs += ["--memory", "1g", "--memory-swap", "2g"]
         nerdctlArgs += ["--cpus", "1.0"]
 
         for pm in spec.ports {
@@ -170,6 +170,16 @@ enum ContainerRuntimeClient {
 
     /// Remove all containers created by Vibe (label vibe.project=*).
     /// Called once after VM boot to purge leftovers from crashed/force-quit sessions.
+    /// Returns the bridge IP address of a running container, or nil if unavailable.
+    static func containerIP(name: String) async -> String? {
+        guard let (stdout, _, status) = try? await ssh(
+            ["nerdctl", "inspect", "--format",
+             "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name]
+        ), status == 0 else { return nil }
+        let ip = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ip.isEmpty ? nil : ip
+    }
+
     static func removeAllVibeContainers() async {
         guard let (stdout, _, status) = try? await ssh(
             ["nerdctl", "ps", "-a", "--filter", "label=vibe.project", "--format", "{{.Names}}"]
