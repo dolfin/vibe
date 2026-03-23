@@ -58,16 +58,30 @@ pub fn run(
         .as_deref()
         .context("Manifest missing 'version' field")?;
 
-    // Determine project directory (parent of manifest file)
-    let project_dir = manifest_path
-        .parent()
-        .unwrap_or(Path::new("."))
+    // Determine project directory (parent of manifest file).
+    // Canonicalize the manifest path first so that a bare filename like "vibe.yaml"
+    // (whose .parent() is "" rather than ".") resolves correctly against cwd.
+    let manifest_path_abs = manifest_path
         .canonicalize()
-        .context("Failed to resolve project directory")?;
+        .with_context(|| format!("Failed to resolve manifest path '{}'", manifest_path.display()))?;
+    let project_dir = manifest_path_abs
+        .parent()
+        .unwrap_or(&manifest_path_abs)
+        .to_path_buf();
+
+    // Load ignore patterns from .vibeignore (plus built-in defaults)
+    let ignore_patterns = load_ignore_patterns(&project_dir);
 
     // Collect all files in the project directory
     let mut file_entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    collect_files(&project_dir, &project_dir, &mut file_entries)?;
+    let mut excluded_count: usize = 0;
+    collect_files(
+        &project_dir,
+        &project_dir,
+        &mut file_entries,
+        &ignore_patterns,
+        &mut excluded_count,
+    )?;
 
     // Serialize app manifest to JSON for Swift host consumption
     let app_manifest_json =
@@ -186,6 +200,13 @@ pub fn run(
     println!("  {} {}", "Output:".dimmed(), output_path.display());
     println!("  {} {} ({})", "App:".dimmed(), app_id.cyan(), app_version);
     println!("  {} {} file(s)", "Files:".dimmed(), file_entries.len());
+    if excluded_count > 0 {
+        println!(
+            "  {} {} item(s) excluded via .vibeignore",
+            "Excluded:".dimmed(),
+            excluded_count
+        );
+    }
     if encrypted {
         println!("  {} {}", "Security:".dimmed(), "🔒 Encrypted".yellow());
     }
@@ -193,10 +214,97 @@ pub fn run(
     Ok(())
 }
 
+/// Load ignore patterns from `.vibeignore` in the project root, prepended with
+/// built-in defaults that are always excluded regardless of `.vibeignore`.
+///
+/// Pattern syntax:
+/// - Lines starting with `#` and blank lines are ignored.
+/// - A pattern **without** `/` (after stripping a trailing `/`) matches any
+///   file or directory component at any depth (e.g. `node_modules`).
+/// - A pattern **with** an interior `/` is matched against the relative path
+///   from the project root (e.g. `dist/cache`).
+/// - `*` matches any sequence of characters within a single path segment.
+/// - `?` matches any single character.
+fn load_ignore_patterns(project_dir: &Path) -> Vec<String> {
+    // Built-in defaults — always excluded regardless of .vibeignore content.
+    let mut patterns: Vec<String> = vec![
+        "node_modules".to_string(),
+        "target".to_string(),
+    ];
+
+    let ignore_file = project_dir.join(".vibeignore");
+    if let Ok(contents) = fs::read_to_string(&ignore_file) {
+        for line in contents.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            patterns.push(trimmed.to_string());
+        }
+    }
+
+    patterns
+}
+
+/// Returns true if `rel_path` (e.g. `"src/foo/bar.ts"`) should be excluded.
+fn is_ignored(rel_path: &str, patterns: &[String]) -> bool {
+    for pattern in patterns {
+        let p = pattern.trim_end_matches('/');
+        if p.is_empty() {
+            continue;
+        }
+        if p.contains('/') {
+            // Pattern has an interior slash: match against the full relative path.
+            if glob_match(p, rel_path) {
+                return true;
+            }
+        } else {
+            // No interior slash: match against each path component independently.
+            for component in rel_path.split('/') {
+                if glob_match(p, component) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Glob-style match supporting `*` (any sequence of chars) and `?` (any single char).
+fn glob_match(pattern: &str, text: &str) -> bool {
+    let p: Vec<char> = pattern.chars().collect();
+    let t: Vec<char> = text.chars().collect();
+    glob_match_chars(&p, &t)
+}
+
+fn glob_match_chars(pattern: &[char], text: &[char]) -> bool {
+    match (pattern, text) {
+        ([], []) => true,
+        ([], _) => false,
+        (['*', p_rest @ ..], _) => {
+            // * matches zero characters…
+            if glob_match_chars(p_rest, text) {
+                return true;
+            }
+            // …or one or more characters.
+            if let Some((_, t_rest)) = text.split_first() {
+                glob_match_chars(pattern, t_rest)
+            } else {
+                false
+            }
+        }
+        (['?', p_rest @ ..], [_, t_rest @ ..]) => glob_match_chars(p_rest, t_rest),
+        ([p, p_rest @ ..], [t, t_rest @ ..]) if p == t => glob_match_chars(p_rest, t_rest),
+        _ => false,
+    }
+}
+
 fn collect_files(
     base: &Path,
     current: &Path,
     entries: &mut BTreeMap<String, Vec<u8>>,
+    patterns: &[String],
+    excluded: &mut usize,
 ) -> Result<()> {
     let read_dir = fs::read_dir(current)
         .with_context(|| format!("Failed to read directory '{}'", current.display()))?;
@@ -205,7 +313,7 @@ fn collect_files(
         let entry = entry?;
         let path = entry.path();
 
-        // Skip hidden files/dirs and .vibeapp files
+        // Skip hidden files/dirs and .vibeapp / .sig files
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
             if name.starts_with('.') || name.ends_with(".vibeapp") || name.ends_with(".sig") {
                 continue;
@@ -223,8 +331,14 @@ fn collect_files(
             anyhow::bail!("Path traversal detected in '{}', aborting", rel_path);
         }
 
+        // Check ignore patterns — prunes entire directories before recursing
+        if is_ignored(&rel_path, patterns) {
+            *excluded += 1;
+            continue;
+        }
+
         if path.is_dir() {
-            collect_files(base, &path, entries)?;
+            collect_files(base, &path, entries, patterns, excluded)?;
         } else {
             let contents =
                 fs::read(&path).with_context(|| format!("Failed to read '{}'", path.display()))?;

@@ -3,9 +3,17 @@ name = "vibe-cli"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "vibe_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "vibe"
 path = "src/main.rs"
+
+[[bin]]
+name = "vibe-gen-man"
+path = "src/bin/gen_man.rs"
 
 [dependencies]
 vibe-manifest = { path = "../../libs/manifest" }
@@ -23,6 +31,7 @@ aes-gcm = { workspace = true }
 argon2 = { workspace = true }
 rand = { workspace = true }
 rpassword = "7"
+clap_mangen = "0.2"
 
 [dev-dependencies]
 tempfile = { workspace = true }
