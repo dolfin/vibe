@@ -1,0 +1,47 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH vibe 1  "vibe " 
+.SH NAME
+vibe \- Vibe Runtime packaging and development tool
+.SH SYNOPSIS
+\fBvibe\fR [\fB\-h\fR|\fB\-\-help\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Vibe Runtime packaging and development tool
+.SH OPTIONS
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.SH SUBCOMMANDS
+.TP
+vibe\-init(1)
+Initialize a new Vibe application project
+.TP
+vibe\-validate(1)
+Validate a vibe.yaml manifest
+.TP
+vibe\-package(1)
+Package a Vibe application into a .vibeapp archive
+.TP
+vibe\-sign(1)
+Sign a .vibeapp package
+.TP
+vibe\-verify(1)
+Verify a signed .vibeapp package
+.TP
+vibe\-keygen(1)
+Generate an Ed25519 signing keypair
+.TP
+vibe\-import\-compose(1)
+Import from Docker Compose (coming soon)
+.TP
+vibe\-inspect(1)
+Inspect a .vibeapp package
+.TP
+vibe\-revert(1)
+Strip saved user state (_vibe_state/*) from a .vibeapp, restoring original signed content
+.TP
+vibe\-install\-hooks(1)
+Install AI coding assistant skills for Vibe development (Claude, Codex, Cursor, Copilot)
+.TP
+vibe\-help(1)
+Print this message or the help of the given subcommand(s)
