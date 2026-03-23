@@ -159,3 +159,124 @@ fn hex_decode(hex: &str) -> Result<[u8; 32]> {
     }
     Ok(bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write as _;
+    use std::path::Path;
+
+    use tempfile::tempdir;
+    use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
+
+    use crate::test_helpers::{
+        build_encrypted_signed_package, build_package, build_signed_package, write_minimal_project,
+    };
+
+    #[test]
+    fn valid_signed_package_ok() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        let (_, pub_path) = build_signed_package(&manifest, &output);
+        assert!(super::run(&output, &pub_path, None, None).is_ok());
+    }
+
+    #[test]
+    fn unsigned_package_err() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_package(&manifest, &output);
+        let prefix = dir.path().join("k").to_str().unwrap().to_string();
+        crate::commands::keygen::run(&prefix).unwrap();
+        let pub_path = std::path::PathBuf::from(format!("{prefix}.pub"));
+        let result = super::run(&output, &pub_path, None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn wrong_key_err() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_signed_package(&manifest, &output);
+        // Generate a different keypair for verification
+        let prefix2 = dir.path().join("other").to_str().unwrap().to_string();
+        crate::commands::keygen::run(&prefix2).unwrap();
+        let wrong_pub = std::path::PathBuf::from(format!("{prefix2}.pub"));
+        assert!(super::run(&output, &wrong_pub, None, None).is_err());
+    }
+
+    #[test]
+    fn invalid_pub_key_size_err() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_signed_package(&manifest, &output);
+        let bad_key = dir.path().join("bad.pub");
+        std::fs::write(&bad_key, b"tooshort").unwrap();
+        assert!(super::run(&output, &bad_key, None, None).is_err());
+    }
+
+    #[test]
+    fn tampered_file_fails_integrity() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        let (_, pub_path) = build_signed_package(&manifest, &output);
+
+        // Read original ZIP entries
+        let data = std::fs::read(&output).unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&data)).unwrap();
+        let names: Vec<String> = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .collect();
+
+        // Re-build ZIP with tampered index.html
+        let mut new_data = Vec::new();
+        let mut writer = ZipWriter::new(std::io::Cursor::new(&mut new_data));
+        let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for name in &names {
+            let mut entry = archive.by_name(name).unwrap();
+            let mut contents = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut contents).unwrap();
+            if name == "index.html" {
+                contents = b"tampered".to_vec();
+            }
+            writer.start_file(name, opts).unwrap();
+            writer.write_all(&contents).unwrap();
+        }
+        writer.finish().unwrap();
+        std::fs::write(&output, &new_data).unwrap();
+
+        assert!(super::run(&output, &pub_path, None, None).is_err());
+    }
+
+    #[test]
+    fn encrypted_signed_package_ok() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        let (_, pub_path) = build_encrypted_signed_package(&manifest, &output, "pw123");
+        assert!(super::run(&output, &pub_path, Some("pw123"), None).is_ok());
+    }
+
+    #[test]
+    fn encrypted_wrong_password_err() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        let (_, pub_path) = build_encrypted_signed_package(&manifest, &output, "correct");
+        assert!(super::run(&output, &pub_path, Some("wrong"), None).is_err());
+    }
+
+    #[test]
+    fn nonexistent_package_err() {
+        let dir = tempdir().unwrap();
+        let prefix = dir.path().join("k").to_str().unwrap().to_string();
+        crate::commands::keygen::run(&prefix).unwrap();
+        let pub_path = std::path::PathBuf::from(format!("{prefix}.pub"));
+        assert!(super::run(Path::new("/no/such.vibeapp"), &pub_path, None, None).is_err());
+    }
+}

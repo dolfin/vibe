@@ -10,3 +10,11 @@ pub fn run() -> Result<()> {
     );
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn returns_ok() {
+        assert!(super::run().is_ok());
+    }
+}

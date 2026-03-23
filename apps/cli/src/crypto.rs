@@ -331,4 +331,166 @@ mod tests {
         let bytes = open_package(&path, None, None).unwrap();
         assert_eq!(bytes, original);
     }
+
+    #[test]
+    fn open_package_encrypted_with_password() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("enc.vibeapp");
+        let original = make_dummy_zip();
+        let (ct, meta) = encrypt_package(&original, b"secret").unwrap();
+        write_encrypted_vibeapp(&ct, &meta, &path).unwrap();
+
+        let result = open_package(&path, Some("secret"), None).unwrap();
+        assert_eq!(result, original);
+    }
+
+    #[test]
+    fn open_package_nonexistent_err() {
+        let result = open_package(std::path::Path::new("/no/such/file.vibeapp"), None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn save_package_no_password_writes_raw() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("out.vibeapp");
+        let original = make_dummy_zip();
+        save_package(&original, &dest, None, None).unwrap();
+        let written = fs::read(&dest).unwrap();
+        assert_eq!(written, original);
+    }
+
+    #[test]
+    fn save_package_with_password_is_encrypted() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("out.vibeapp");
+        let original = make_dummy_zip();
+        save_package(&original, &dest, Some("pw"), None).unwrap();
+        assert!(is_encrypted_package(&dest));
+    }
+
+    #[test]
+    fn resolve_password_direct() {
+        let result = resolve_password(Some("mypass"), None, "").unwrap();
+        assert_eq!(result, "mypass");
+    }
+
+    #[test]
+    fn resolve_password_from_file() {
+        let dir = tempdir().unwrap();
+        let pw_file = dir.path().join("pw.txt");
+        fs::write(&pw_file, "mypass\n").unwrap();
+        let result = resolve_password(None, Some(&pw_file), "").unwrap();
+        assert_eq!(result, "mypass");
+    }
+
+    #[test]
+    fn resolve_password_file_not_found_err() {
+        let result = resolve_password(
+            None,
+            Some(std::path::Path::new("/no/such/pw.txt")),
+            "",
+        );
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("password file") || msg.contains("Failed"), "got: {msg}");
+    }
+
+    #[test]
+    fn is_encrypted_nonexistent_file() {
+        assert!(!is_encrypted_package(std::path::Path::new("/no/such/file.vibeapp")));
+    }
+
+    #[test]
+    fn is_encrypted_invalid_zip_bytes() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("garbage.vibeapp");
+        fs::write(&path, b"this is not a zip file at all").unwrap();
+        assert!(!is_encrypted_package(&path));
+    }
+
+    #[test]
+    fn read_encrypted_missing_encryption_json_err() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("plain.vibeapp");
+        fs::write(&path, make_dummy_zip()).unwrap();
+        let result = read_encrypted_vibeapp(&path);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("_vibe_encryption.json"), "got: {msg}");
+    }
+
+    #[test]
+    fn read_encrypted_missing_payload_err() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("partial.vibeapp");
+        // ZIP with only _vibe_encryption.json but no payload
+        let json = r#"{"version":1,"cipher":"aes-256-gcm","kdf":"argon2id","kdf_params":{"m_cost":65536,"t_cost":3,"p_cost":4,"salt":"0000000000000000000000000000000000000000000000000000000000000000"},"nonce":"000000000000000000000000"}"#;
+        let zip_bytes = crate::test_helpers::make_zip(&[("_vibe_encryption.json", json.as_bytes())]);
+        fs::write(&path, zip_bytes).unwrap();
+        let result = read_encrypted_vibeapp(&path);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("_vibe_encrypted_payload"), "got: {msg}");
+    }
+
+    #[test]
+    fn salt_bytes_wrong_hex_length_err() {
+        let meta = EncryptionMetadata {
+            version: 1,
+            cipher: "aes-256-gcm".to_string(),
+            kdf: "argon2id".to_string(),
+            kdf_params: KdfParams {
+                m_cost: 65536,
+                t_cost: 3,
+                p_cost: 4,
+                salt: "short".to_string(),
+            },
+            nonce: "000000000000000000000000".to_string(),
+        };
+        let result = meta.salt_bytes();
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("64") || msg.contains("hex"), "got: {msg}");
+    }
+
+    #[test]
+    fn nonce_bytes_wrong_hex_length_err() {
+        let meta = EncryptionMetadata {
+            version: 1,
+            cipher: "aes-256-gcm".to_string(),
+            kdf: "argon2id".to_string(),
+            kdf_params: KdfParams {
+                m_cost: 65536,
+                t_cost: 3,
+                p_cost: 4,
+                salt: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            },
+            nonce: "short".to_string(),
+        };
+        let result = meta.nonce_bytes();
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("24") || msg.contains("hex"), "got: {msg}");
+    }
+
+    #[test]
+    fn derive_key_invalid_params_err() {
+        let meta = EncryptionMetadata {
+            version: 1,
+            cipher: "aes-256-gcm".to_string(),
+            kdf: "argon2id".to_string(),
+            kdf_params: KdfParams {
+                m_cost: 0, // invalid
+                t_cost: 3,
+                p_cost: 4,
+                salt: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            },
+            nonce: "000000000000000000000000".to_string(),
+        };
+        let result = derive_key(b"password", &meta);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("Argon2") || msg.contains("Invalid"), "got: {msg}");
+    }
 }

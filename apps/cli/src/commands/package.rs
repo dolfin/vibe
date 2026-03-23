@@ -349,6 +349,325 @@ fn collect_files(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use tempfile::tempdir;
+
+    use crate::test_helpers::{
+        assert_zip_contains, assert_zip_not_contains, read_zip_entry, write_minimal_project,
+        write_password_file,
+    };
+
+    // ── run() tests ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn creates_vibeapp_file() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        assert!(output.exists());
+    }
+
+    #[test]
+    fn zip_contains_package_manifest() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        assert_zip_contains(&output, "_vibe_package_manifest.json");
+    }
+
+    #[test]
+    fn zip_contains_app_manifest() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        assert_zip_contains(&output, "_vibe_app_manifest.json");
+    }
+
+    #[test]
+    fn zip_contains_user_files() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        assert_zip_contains(&output, "index.html");
+    }
+
+    #[test]
+    fn excludes_hidden_files() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        std::fs::write(dir.path().join(".secret"), b"secret").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        assert_zip_not_contains(&output, ".secret");
+    }
+
+    #[test]
+    fn excludes_vibeapp_files() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        std::fs::write(dir.path().join("other.vibeapp"), b"dummy").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        assert_zip_not_contains(&output, "other.vibeapp");
+    }
+
+    #[test]
+    fn excludes_sig_files() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        std::fs::write(dir.path().join("package.sig"), b"sig").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        assert_zip_not_contains(&output, "package.sig");
+    }
+
+    #[test]
+    fn excludes_node_modules() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let nm = dir.path().join("node_modules");
+        std::fs::create_dir(&nm).unwrap();
+        std::fs::write(nm.join("package.json"), b"{}").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        assert_zip_not_contains(&output, "node_modules/package.json");
+    }
+
+    #[test]
+    fn excludes_target_dir() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let tgt = dir.path().join("target/debug");
+        std::fs::create_dir_all(&tgt).unwrap();
+        std::fs::write(tgt.join("binary"), b"bin").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        assert_zip_not_contains(&output, "target/debug/binary");
+    }
+
+    #[test]
+    fn respects_vibeignore_pattern() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        std::fs::write(dir.path().join(".vibeignore"), "*.log\n").unwrap();
+        std::fs::write(dir.path().join("app.log"), b"logs").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        assert_zip_not_contains(&output, "app.log");
+    }
+
+    #[test]
+    fn package_manifest_json_structure() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        let bytes = read_zip_entry(&output, "_vibe_package_manifest.json");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(json["format_version"].is_string());
+        assert!(json["app_id"].is_string());
+        assert!(json["app_version"].is_string());
+        assert!(json["created_at"].is_string());
+        assert!(json["files"].is_object());
+    }
+
+    #[test]
+    fn file_hashes_are_64_char_hex() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, None).unwrap();
+        let bytes = read_zip_entry(&output, "_vibe_package_manifest.json");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let files = json["files"].as_object().unwrap();
+        for (_, hash) in files {
+            let h = hash.as_str().unwrap();
+            assert_eq!(h.len(), 64, "hash '{}' should be 64 chars", h);
+            assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
+        }
+    }
+
+    #[test]
+    fn with_password_creates_encrypted_output() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, Some("hunter2"), None).unwrap();
+        assert!(crate::crypto::is_encrypted_package(&output));
+    }
+
+    #[test]
+    fn with_password_file() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let pw_file = write_password_file(dir.path(), "mypassword");
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), None, None, Some(&pw_file)).unwrap();
+        assert!(crate::crypto::is_encrypted_package(&output));
+    }
+
+    #[test]
+    fn invalid_manifest_returns_err() {
+        let dir = tempdir().unwrap();
+        let manifest = dir.path().join("vibe.yaml");
+        std::fs::write(&manifest, "kind: wrong/v1\n").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        assert!(super::run(&manifest, Some(&output), None, None, None).is_err());
+        assert!(!output.exists());
+    }
+
+    #[test]
+    fn missing_manifest_returns_err() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("out.vibeapp");
+        let result =
+            super::run(Path::new("/nonexistent/vibe.yaml"), Some(&output), None, None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn with_seed_data_adds_initial_state() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let seed_dir = dir.path().join("seeds");
+        let data_dir = seed_dir.join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        std::fs::write(data_dir.join("init.sql"), b"CREATE TABLE t (id int);").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), Some(&seed_dir), None, None).unwrap();
+        assert_zip_contains(&output, "_vibe_initial_state/data.tar.gz");
+    }
+
+    #[test]
+    fn seed_data_skips_hidden_dirs() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let seed_dir = dir.path().join("seeds");
+        std::fs::create_dir_all(seed_dir.join(".hidden")).unwrap();
+        std::fs::write(seed_dir.join(".hidden/file.txt"), b"x").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), Some(&seed_dir), None, None).unwrap();
+        assert_zip_not_contains(&output, "_vibe_initial_state/.hidden.tar.gz");
+    }
+
+    #[test]
+    fn seed_data_skips_top_level_files() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let seed_dir = dir.path().join("seeds");
+        std::fs::create_dir_all(&seed_dir).unwrap();
+        std::fs::write(seed_dir.join("readme.txt"), b"ignore me").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        super::run(&manifest, Some(&output), Some(&seed_dir), None, None).unwrap();
+        assert_zip_not_contains(&output, "_vibe_initial_state/readme.txt.tar.gz");
+    }
+
+    #[test]
+    fn excluded_count_positive_with_ignored_items() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let nm = dir.path().join("node_modules");
+        std::fs::create_dir(&nm).unwrap();
+        std::fs::write(nm.join("index.js"), b"").unwrap();
+        let output = dir.path().join("out.vibeapp");
+        // Should succeed (excluded_count > 0 branch) without error
+        assert!(super::run(&manifest, Some(&output), None, None, None).is_ok());
+    }
+
+    // ── glob_match tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn glob_exact_match() {
+        assert!(super::glob_match("foo.txt", "foo.txt"));
+    }
+
+    #[test]
+    fn glob_no_match() {
+        assert!(!super::glob_match("foo.txt", "bar.txt"));
+    }
+
+    #[test]
+    fn glob_star_matches_sequence() {
+        assert!(super::glob_match("*.txt", "foo.txt"));
+    }
+
+    #[test]
+    fn glob_star_matches_empty() {
+        assert!(super::glob_match("*.txt", ".txt"));
+    }
+
+    #[test]
+    fn glob_question_matches_one_char() {
+        assert!(super::glob_match("f?o", "foo"));
+        assert!(!super::glob_match("f?o", "fo"));
+    }
+
+    #[test]
+    fn glob_star_only() {
+        assert!(super::glob_match("*", "anything"));
+        assert!(super::glob_match("*", ""));
+    }
+
+    #[test]
+    fn glob_empty_both() {
+        assert!(super::glob_match("", ""));
+    }
+
+    #[test]
+    fn glob_empty_pattern_nonempty_text() {
+        assert!(!super::glob_match("", "x"));
+    }
+
+    // ── is_ignored tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn is_ignored_name_matches_any_depth() {
+        let patterns = vec!["node_modules".to_string()];
+        assert!(super::is_ignored("sub/node_modules", &patterns));
+        assert!(super::is_ignored("sub/node_modules/pkg.json", &patterns));
+    }
+
+    #[test]
+    fn is_ignored_slash_pattern_full_path() {
+        let patterns = vec!["dist/cache".to_string()];
+        assert!(super::is_ignored("dist/cache", &patterns));
+        assert!(!super::is_ignored("src/cache", &patterns));
+    }
+
+    #[test]
+    fn is_ignored_trailing_slash_stripped() {
+        let patterns = vec!["node_modules/".to_string()];
+        assert!(super::is_ignored("node_modules", &patterns));
+    }
+
+    // ── load_ignore_patterns tests ───────────────────────────────────────────
+
+    #[test]
+    fn load_patterns_defaults_only() {
+        let dir = tempdir().unwrap();
+        let patterns = super::load_ignore_patterns(dir.path());
+        assert_eq!(patterns, vec!["node_modules", "target"]);
+    }
+
+    #[test]
+    fn load_patterns_appends_vibeignore() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join(".vibeignore"), "*.log\n# comment\n\n").unwrap();
+        let patterns = super::load_ignore_patterns(dir.path());
+        assert_eq!(patterns.len(), 3);
+        assert_eq!(patterns[0], "node_modules");
+        assert_eq!(patterns[1], "target");
+        assert_eq!(patterns[2], "*.log");
+    }
+}
+
 /// Minimal hex encoding to avoid adding a dependency.
 mod hex {
     pub fn encode(bytes: impl AsRef<[u8]>) -> String {

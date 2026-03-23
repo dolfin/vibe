@@ -2,6 +2,9 @@ pub mod commands;
 pub mod crypto;
 pub mod hooks;
 
+#[cfg(test)]
+pub(crate) mod test_helpers;
+
 use std::path::PathBuf;
 
 use clap::{CommandFactory, Parser, Subcommand};

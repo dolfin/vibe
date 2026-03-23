@@ -180,3 +180,96 @@ __pycache__/
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use tempfile::tempdir;
+
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+    fn run_in_dir<F: FnOnce()>(dir: &std::path::Path, f: F) {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let orig = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir).unwrap();
+        f();
+        std::env::set_current_dir(orig).unwrap();
+    }
+
+    #[test]
+    fn creates_three_files() {
+        let dir = tempdir().unwrap();
+        run_in_dir(dir.path(), || {
+            super::run("myapp").unwrap();
+            assert!(dir.path().join("myapp/vibe.yaml").exists());
+            assert!(dir.path().join("myapp/index.html").exists());
+            assert!(dir.path().join("myapp/.vibeignore").exists());
+        });
+    }
+
+    #[test]
+    fn vibe_yaml_contains_id() {
+        let dir = tempdir().unwrap();
+        run_in_dir(dir.path(), || {
+            super::run("my-app").unwrap();
+            let yaml = std::fs::read_to_string(dir.path().join("my-app/vibe.yaml")).unwrap();
+            assert!(yaml.contains("id: com.example.my.app"), "got: {yaml}");
+        });
+    }
+
+    #[test]
+    fn vibe_yaml_contains_name() {
+        let dir = tempdir().unwrap();
+        run_in_dir(dir.path(), || {
+            super::run("coolapp").unwrap();
+            let yaml = std::fs::read_to_string(dir.path().join("coolapp/vibe.yaml")).unwrap();
+            assert!(yaml.contains("name: coolapp"), "got: {yaml}");
+        });
+    }
+
+    #[test]
+    fn index_html_contains_name() {
+        let dir = tempdir().unwrap();
+        run_in_dir(dir.path(), || {
+            super::run("helloworld").unwrap();
+            let html = std::fs::read_to_string(dir.path().join("helloworld/index.html")).unwrap();
+            assert!(html.contains("<title>helloworld</title>"), "got: {html}");
+            assert!(html.contains(">helloworld<"), "got: {html}");
+        });
+    }
+
+    #[test]
+    fn vibeignore_has_comment_header() {
+        let dir = tempdir().unwrap();
+        run_in_dir(dir.path(), || {
+            super::run("testapp").unwrap();
+            let content =
+                std::fs::read_to_string(dir.path().join("testapp/.vibeignore")).unwrap();
+            assert!(content.starts_with("# .vibeignore"), "got: {content}");
+        });
+    }
+
+    #[test]
+    fn fails_if_directory_exists() {
+        let dir = tempdir().unwrap();
+        run_in_dir(dir.path(), || {
+            std::fs::create_dir(dir.path().join("existing")).unwrap();
+            let result = super::run("existing");
+            assert!(result.is_err());
+            let msg = format!("{}", result.unwrap_err());
+            assert!(msg.contains("already exists"), "got: {msg}");
+        });
+    }
+
+    #[test]
+    fn multi_hyphen_conversion() {
+        let dir = tempdir().unwrap();
+        run_in_dir(dir.path(), || {
+            super::run("my-cool-app").unwrap();
+            let yaml =
+                std::fs::read_to_string(dir.path().join("my-cool-app/vibe.yaml")).unwrap();
+            assert!(yaml.contains("id: com.example.my.cool.app"), "got: {yaml}");
+        });
+    }
+}

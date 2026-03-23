@@ -87,3 +87,96 @@ fn format_size(bytes: u64) -> String {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use tempfile::tempdir;
+
+    use crate::test_helpers::{
+        build_encrypted_package, build_signed_package, make_zip, write_minimal_project,
+        write_password_file,
+    };
+
+    #[test]
+    fn unsigned_package_ok() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        crate::test_helpers::build_package(&manifest, &output);
+        assert!(super::run(&output, None, None).is_ok());
+    }
+
+    #[test]
+    fn signed_package_ok() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_signed_package(&manifest, &output);
+        assert!(super::run(&output, None, None).is_ok());
+    }
+
+    #[test]
+    fn encrypted_with_password_ok() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_encrypted_package(&manifest, &output, "pw123");
+        assert!(super::run(&output, Some("pw123"), None).is_ok());
+    }
+
+    #[test]
+    fn encrypted_with_password_file_ok() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_encrypted_package(&manifest, &output, "pw123");
+        let pw_file = write_password_file(dir.path(), "pw123");
+        assert!(super::run(&output, None, Some(&pw_file)).is_ok());
+    }
+
+    #[test]
+    fn encrypted_wrong_password_err() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_encrypted_package(&manifest, &output, "correct");
+        assert!(super::run(&output, Some("wrong"), None).is_err());
+    }
+
+    #[test]
+    fn nonexistent_package_err() {
+        assert!(super::run(Path::new("/no/such.vibeapp"), None, None).is_err());
+    }
+
+    #[test]
+    fn package_without_manifest_json_ok() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("out.vibeapp");
+        let zip_bytes = make_zip(&[("readme.txt", b"hello world")]);
+        std::fs::write(&output, &zip_bytes).unwrap();
+        // Missing _vibe_package_manifest.json → warning branch, not Err
+        assert!(super::run(&output, None, None).is_ok());
+    }
+
+    // ── format_size tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn format_size_bytes() {
+        assert_eq!(super::format_size(0), "0 B");
+        assert_eq!(super::format_size(512), "512 B");
+        assert_eq!(super::format_size(1023), "1023 B");
+    }
+
+    #[test]
+    fn format_size_kilobytes() {
+        assert_eq!(super::format_size(1024), "1.0 KB");
+        assert_eq!(super::format_size(2048), "2.0 KB");
+    }
+
+    #[test]
+    fn format_size_megabytes() {
+        assert_eq!(super::format_size(1024 * 1024), "1.0 MB");
+    }
+}

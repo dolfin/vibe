@@ -1,4 +1,4 @@
-.PHONY: bootstrap build test lint fmt clean bundle-vm demo-packages demo-verify release-cli release-app docs man install
+.PHONY: bootstrap build test coverage coverage-html lint fmt clean bundle-vm demo-packages demo-verify release-cli release-app docs man install
 
 bootstrap:
 	@echo "==> Installing Rust toolchain components..."
@@ -20,6 +20,23 @@ test:
 	@echo "==> Running Swift tests..."
 	cd apps/mac-host && swift test
 	@echo "==> All tests passed."
+
+RUSTUP_TOOLCHAIN_BIN = $(shell rustup run stable rustc --print sysroot)/lib/rustlib/$(shell rustup run stable rustc -vV | awk '/^host:/{print $$2}')/bin
+LLVM_COV     = $(RUSTUP_TOOLCHAIN_BIN)/llvm-cov
+LLVM_PROFDATA = $(RUSTUP_TOOLCHAIN_BIN)/llvm-profdata
+
+coverage:
+	@echo "==> Checking for cargo-llvm-cov..."
+	@cargo llvm-cov --version > /dev/null 2>&1 || (echo "cargo-llvm-cov not found. Install with: cargo install cargo-llvm-cov && rustup component add llvm-tools-preview" && exit 1)
+	@echo "==> Running tests with coverage (vibe-cli)..."
+	LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) \
+		cargo llvm-cov --package vibe-cli --summary-only
+	@echo "==> For an HTML report: make coverage-html"
+
+coverage-html:
+	@echo "==> Generating HTML coverage report..."
+	LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) \
+		cargo llvm-cov --package vibe-cli --html --open
 
 lint:
 	@echo "==> Running clippy..."

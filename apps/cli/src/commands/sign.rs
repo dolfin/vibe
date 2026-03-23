@@ -145,3 +145,146 @@ fn hex_decode(hex: &str) -> Result<[u8; 32]> {
     }
     Ok(bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use tempfile::tempdir;
+
+    use crate::test_helpers::{
+        assert_zip_contains, build_encrypted_package, build_package, read_zip_entry,
+        write_minimal_project,
+    };
+
+    fn keygen(dir: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
+        let prefix = dir.join("_signing").to_str().unwrap().to_string();
+        crate::commands::keygen::run(&prefix).unwrap();
+        (
+            std::path::PathBuf::from(format!("{prefix}.key")),
+            std::path::PathBuf::from(format!("{prefix}.pub")),
+        )
+    }
+
+    #[test]
+    fn adds_signature_entry() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_package(&manifest, &output);
+        let (key_path, _) = keygen(dir.path());
+        super::run(&output, &key_path, None, None).unwrap();
+        assert_zip_contains(&output, "_vibe_signature.sig");
+    }
+
+    #[test]
+    fn signature_is_64_bytes() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_package(&manifest, &output);
+        let (key_path, _) = keygen(dir.path());
+        super::run(&output, &key_path, None, None).unwrap();
+        let sig = read_zip_entry(&output, "_vibe_signature.sig");
+        assert_eq!(sig.len(), 64);
+    }
+
+    #[test]
+    fn re_sign_has_single_signature() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_package(&manifest, &output);
+        let (key_path, _) = keygen(dir.path());
+        // Sign twice
+        super::run(&output, &key_path, None, None).unwrap();
+        super::run(&output, &key_path, None, None).unwrap();
+        // Count signature entries
+        let data = std::fs::read(&output).unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data)).unwrap();
+        let count = (0..archive.len())
+            .filter(|&i| archive.by_index(i).unwrap().name() == "_vibe_signature.sig")
+            .count();
+        assert_eq!(count, 1, "should have exactly one signature entry");
+    }
+
+    #[test]
+    fn different_key_produces_different_sig() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+
+        let out1 = dir.path().join("out1.vibeapp");
+        let out2 = dir.path().join("out2.vibeapp");
+        build_package(&manifest, &out1);
+        std::fs::copy(&out1, &out2).unwrap();
+
+        let prefix1 = dir.path().join("k1").to_str().unwrap().to_string();
+        let prefix2 = dir.path().join("k2").to_str().unwrap().to_string();
+        crate::commands::keygen::run(&prefix1).unwrap();
+        crate::commands::keygen::run(&prefix2).unwrap();
+        let key1 = std::path::PathBuf::from(format!("{prefix1}.key"));
+        let key2 = std::path::PathBuf::from(format!("{prefix2}.key"));
+
+        super::run(&out1, &key1, None, None).unwrap();
+        super::run(&out2, &key2, None, None).unwrap();
+
+        let sig1 = read_zip_entry(&out1, "_vibe_signature.sig");
+        let sig2 = read_zip_entry(&out2, "_vibe_signature.sig");
+        assert_ne!(sig1, sig2);
+    }
+
+    #[test]
+    fn nonexistent_package_err() {
+        let dir = tempdir().unwrap();
+        let (key_path, _) = keygen(dir.path());
+        assert!(super::run(Path::new("/no/such/file.vibeapp"), &key_path, None, None).is_err());
+    }
+
+    #[test]
+    fn nonexistent_key_err() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_package(&manifest, &output);
+        assert!(
+            super::run(&output, Path::new("/no/such/key.key"), None, None).is_err()
+        );
+    }
+
+    #[test]
+    fn invalid_key_wrong_size_err() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_package(&manifest, &output);
+        let bad_key = dir.path().join("bad.key");
+        std::fs::write(&bad_key, b"tooshort").unwrap();
+        let result = super::run(&output, &bad_key, None, None);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("expected 32 bytes") || msg.contains("32"), "got: {msg}");
+    }
+
+    #[test]
+    fn encrypted_package_with_password() {
+        let dir = tempdir().unwrap();
+        let manifest = write_minimal_project(dir.path(), "testapp");
+        let output = dir.path().join("out.vibeapp");
+        build_encrypted_package(&manifest, &output, "mypass");
+        let (key_path, _) = keygen(dir.path());
+        super::run(&output, &key_path, Some("mypass"), None).unwrap();
+        // Should still be encrypted after signing
+        assert!(crate::crypto::is_encrypted_package(&output));
+    }
+
+    #[test]
+    fn missing_package_manifest_err() {
+        let dir = tempdir().unwrap();
+        let output = dir.path().join("out.vibeapp");
+        // Build ZIP without _vibe_package_manifest.json
+        let zip_bytes = crate::test_helpers::make_zip(&[("readme.txt", b"hello")]);
+        std::fs::write(&output, &zip_bytes).unwrap();
+        let (key_path, _) = keygen(dir.path());
+        assert!(super::run(&output, &key_path, None, None).is_err());
+    }
+}
