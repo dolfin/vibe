@@ -5,7 +5,7 @@ set -e
 # On first run this fetches from the network; subsequent runs install from cache.
 mkdir -p /data/apk-cache
 echo "[bookmarks] Installing PostgreSQL..."
-apk add --no-cache --cache-dir /data/apk-cache postgresql postgresql-client 2>&1
+apk add --cache-dir /data/apk-cache postgresql postgresql-client 2>&1
 
 export PGDATA=/data/pgdata
 
@@ -15,19 +15,28 @@ if [ ! -f "$PGDATA/PG_VERSION" ]; then
   echo "[bookmarks] Initializing PostgreSQL database cluster..."
   mkdir -p "$PGDATA"
   chown postgres:postgres "$PGDATA"
-  su -s /bin/sh postgres -c "initdb -D $PGDATA -U postgres --auth=trust --auth-local=trust --encoding=UTF8 --locale=C"
+  # --no-sync skips fsync during init — safe for a demo, much faster on virtio-fs
+  su -s /bin/sh postgres -c "initdb -D $PGDATA -U postgres --auth=trust --auth-local=trust --encoding=UTF8 --locale=C --no-sync"
 fi
 
 echo "[bookmarks] Starting PostgreSQL..."
-su -s /bin/sh postgres -c "pg_ctl -D $PGDATA -l $PGDATA/server.log start -o '-c listen_addresses=127.0.0.1'"
+# -W: return immediately (don't wait for server ready — we do that below)
+# fsync=off + synchronous_commit=off: avoid slow fsync on virtio-fs
+su -s /bin/sh postgres -c "pg_ctl -D $PGDATA -l $PGDATA/server.log start -W -o '-c listen_addresses=127.0.0.1 -c fsync=off -c synchronous_commit=off'"
 
 echo "[bookmarks] Waiting for PostgreSQL to be ready..."
 i=0
-while [ $i -lt 30 ]; do
+while [ $i -lt 60 ]; do
   pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break
-  sleep 1
+  sleep 2
   i=$((i + 1))
 done
+
+if ! pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then
+  echo "[bookmarks] ERROR: PostgreSQL failed to start within 120s"
+  cat "$PGDATA/server.log" 2>/dev/null || true
+  exit 1
+fi
 
 psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE bookmarks;" 2>/dev/null || true
 
