@@ -1,4 +1,4 @@
-.PHONY: bootstrap build test lint fmt clean bundle-vm demo-packages demo-verify release-cli release-app
+.PHONY: bootstrap build test lint fmt clean bundle-vm demo-packages demo-verify release-cli release-app docs man install
 
 bootstrap:
 	@echo "==> Installing Rust toolchain components..."
@@ -99,6 +99,24 @@ release-app:
 		-exportOptionsPlist apps/mac-host/ExportOptions.plist \
 		-exportPath build/export/
 	@echo "==> App exported to build/export/"
+
+docs:
+	@echo "==> Starting Mintlify dev server..."
+	mintlify dev
+
+man:
+	@echo "==> Generating man page..."
+	cargo run --bin vibe-gen-man
+	@echo "==> Man page written to man/vibe.1"
+
+install: release-cli man
+	@echo "==> Installing vibe CLI to /usr/local/bin..."
+	install -d /usr/local/bin
+	install -m 755 target/release/vibe /usr/local/bin/vibe
+	@echo "==> Installing man page to /usr/local/share/man/man1..."
+	install -d /usr/local/share/man/man1
+	install -m 644 man/vibe.1 /usr/local/share/man/man1/vibe.1
+	@echo "==> vibe installed (binary + man page)"
 
 clean:
 	cargo clean
