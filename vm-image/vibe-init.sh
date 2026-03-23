@@ -125,15 +125,27 @@ fi
 stage "packages"
 
 # ── Install CNI plugins ──────────────────────────────────────────────────────
+# Cache CNI plugins on the persistent data disk so they survive reboots.
+# /opt/cni/bin lives on tmpfs (initramfs) and is empty on every boot.
+CNI_CACHE=/var/lib/containerd/.vibe-cni
 CNI_DIR=/opt/cni/bin
-if [ ! -f "$CNI_DIR/bridge" ]; then
-    log "Installing CNI plugins..."
+if [ -d "$CNI_CACHE" ] && [ -f "$CNI_CACHE/bridge" ]; then
+    mkdir -p "$CNI_DIR"
+    cp -a "$CNI_CACHE/." "$CNI_DIR/"
+    log "Restored CNI plugins from data disk cache"
+else
+    log "Installing CNI plugins from network (first boot)..."
     ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
     mkdir -p "$CNI_DIR"
-    wget -q -O /tmp/cni.tgz \
+    if wget -q -O /tmp/cni.tgz \
         "https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-${ARCH}-v1.4.0.tgz" && \
-        tar -xzf /tmp/cni.tgz -C "$CNI_DIR" && \
-        rm /tmp/cni.tgz || log "CNI plugin install failed (non-fatal)"
+       tar -xzf /tmp/cni.tgz -C "$CNI_DIR"; then
+        rm -f /tmp/cni.tgz
+        mkdir -p "$CNI_CACHE" && cp -a "$CNI_DIR/." "$CNI_CACHE/"
+        log "CNI plugins installed and cached to data disk"
+    else
+        log "WARNING: CNI plugin install failed — bridge network unavailable"
+    fi
 fi
 
 # ── CNI network config ───────────────────────────────────────────────────────
