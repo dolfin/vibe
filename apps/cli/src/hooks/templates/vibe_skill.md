@@ -110,6 +110,7 @@ publisher:
 ## CLI Workflow
 
 ```bash
+vibe init <name>                 # scaffold new project → creates <name>/vibe.yaml + <name>/.vibeignore
 vibe validate vibe.yaml          # check manifest for errors
 vibe package vibe.yaml -o app.vibeapp   # create archive
 vibe keygen -o signing           # one-time: generate signing.key + signing.pub
@@ -118,6 +119,15 @@ vibe verify app.vibeapp --key signing.pub  # verify signature
 vibe inspect app.vibeapp         # show manifest + file listing
 vibe revert app.vibeapp          # strip saved state, restore original
 ```
+
+**`vibe init <name>` creates:**
+```
+<name>/
+  vibe.yaml       ← manifest (nginx:alpine serving index.html on port 80)
+  index.html      ← Hello World page (edit this)
+  .vibeignore     ← exclusion rules
+```
+Do NOT run `vibe init` when adding Vibe to an existing project — write `vibe.yaml` directly in the project root instead (see workflow below).
 
 ## Password Protection
 
@@ -147,18 +157,116 @@ vibe inspect app.vibeapp
 - Wrong password: command fails with `"Wrong password or corrupted package"`.
 - The host app detects encryption automatically and shows a password dialog.
 
+## Adding Vibe to an Existing Project
+
+Do NOT run `vibe init` — it creates a new subdirectory. Instead:
+
+1. Write `vibe.yaml` in the project root
+2. Write `.vibeignore` in the project root (copy the template below)
+3. Run `vibe validate vibe.yaml`
+4. Run `vibe package vibe.yaml -o <name>.vibeapp`
+
+**Starter `.vibeignore` for any project:**
+```
+node_modules/
+target/
+dist/
+build/
+*.log
+__pycache__/
+*.pyc
+```
+
+## Common Service Command Patterns
+
+The `command` field is the container entrypoint. The container starts fresh on each launch — install deps and start the server in one command using `sh -c`.
+
+**Node.js — install + run (development-style, no build step):**
+```yaml
+image: node:20-alpine
+command: ["sh", "-c", "npm install && node server.js"]
+```
+
+**Node.js — install + build + serve static output (Vite, CRA, etc.):**
+```yaml
+image: node:20-alpine
+command: ["sh", "-c", "npm install && npm run build && npx serve dist -l 3000"]
+ports:
+  - container: 3000
+```
+
+**Node.js — install + build + start (Next.js, Express with build step):**
+```yaml
+image: node:20-alpine
+command: ["sh", "-c", "npm install && npm run build && npm start"]
+```
+
+**Python — install + run:**
+```yaml
+image: python:3.12-alpine
+command: ["sh", "-c", "pip install -r requirements.txt && python app.py"]
+```
+
+**Static site (files in package, served by nginx):**
+```yaml
+image: nginx:alpine
+command: ["sh", "-c", "cp -r /app/. /usr/share/nginx/html && nginx -g 'daemon off;'"]
+ports:
+  - container: 80
+```
+
+**Postgres (database-only service, no command needed):**
+```yaml
+image: postgres:16
+env:
+  POSTGRES_PASSWORD: "secret"
+  POSTGRES_DB: "mydb"
+# no ports — only accessible to other services in the same app
+```
+
+**Key points:**
+- `node_modules/` is excluded from the package — the container installs deps at startup via `npm install`
+- If the app needs build-time env vars (e.g. `VITE_*`), set them in `env:` so they're available during `npm run build` inside the container
+- Use `dependOn` to ensure databases start before the web service
+
+## File Exclusion (`.vibeignore`)
+
+`vibe package` excludes files via `.vibeignore` in the project root (created automatically by `vibe init`).
+
+**Always excluded (built-in, no entry needed):** `node_modules/`, `target/`, hidden files (`.`-prefixed), `*.vibeapp`, `*.sig`
+
+**`.vibeignore` syntax:**
+- One pattern per line; `#` = comment
+- Pattern **without** `/` → matches any file or directory with that name at any depth
+- Pattern **with** `/` → matched against the path relative to the project root
+- `*` matches any sequence of chars; `?` matches one char
+
+```
+# Common additions for a Node.js app:
+dist/
+build/
+*.log
+```
+
+**When to create/edit `.vibeignore`:**
+- Build artifacts shouldn't be bundled (`dist/`, `build/`) — the container should build at runtime
+- Language-specific dependency dirs not caught by built-ins (e.g. Python `venv/`, `__pycache__/`)
+- Large generated files that bloat the package
+
 ## Packaging Workflow (step-by-step)
 
 1. Check `vibe.yaml` exists; if not, run `vibe init <name>` first
-2. Run `vibe validate vibe.yaml` — fix all errors before proceeding
-3. Derive output filename from `id` last segment (e.g. `com.example.todo` → `todo.vibeapp`)
-4. Run `vibe package vibe.yaml -o <name>.vibeapp` (add `--password` to encrypt)
-5. If `signing.key` exists → run `vibe sign <name>.vibeapp --key signing.key`
-6. Run `vibe inspect <name>.vibeapp` — confirm contents
-7. If no signing key, remind: run `vibe keygen -o signing` to generate one
+2. Check `.vibeignore` exists; add entries for any large/generated dirs (e.g. `dist/`)
+3. Run `vibe validate vibe.yaml` — fix all errors before proceeding
+4. Derive output filename from `id` last segment (e.g. `com.example.todo` → `todo.vibeapp`)
+5. Run `vibe package vibe.yaml -o <name>.vibeapp` (add `--password` to encrypt)
+6. If `signing.key` exists → run `vibe sign <name>.vibeapp --key signing.key`
+7. Run `vibe inspect <name>.vibeapp` — confirm contents; check "Excluded:" count in output
+8. If no signing key, remind: run `vibe keygen -o signing` to generate one
 
 ## Common Mistakes
 
+- Large `.vibeapp` (>5 MB) — almost always caused by missing `.vibeignore` entries; check for `node_modules/`, `dist/`, `build/`, virtual envs
 - Missing `kind: vibe.app/v1` (required, exact string)
 - `id` with only one segment (e.g. `myapp` instead of `com.example.myapp`)
 - Referencing a volume in `mounts` without declaring it in `state.volumes`

@@ -110,37 +110,29 @@ name: Todo App
 version: 1.0.0
 icon: assets/icon.png
 
-runtime:
-  mode: native # native | compose
-  composeFile: compose.yaml
-
 services:
   - name: web
-    image: ghcr.io/example/todo-web:1.0.0
+    image: node:20-alpine
     command: ["node", "server.js"]
     env:
       NODE_ENV: production
     ports:
       - container: 3000
-        hostExposure: auto
     mounts:
-      - source: state:uploads
+      - source: uploads
         target: /data/uploads
-    dependsOn: ["db"]
+    dependOn: ["db"]
 
   - name: db
     image: postgres:16
     env:
       POSTGRES_DB: todo
       POSTGRES_USER: todo
-    stateVolumes:
-      - dbdata:/var/lib/postgresql/data
+    mounts:
+      - source: dbdata
+        target: /var/lib/postgresql/data
 
 state:
-  autosave: true
-  autosaveDebounceSeconds: 30
-  retention:
-    maxSnapshots: 100
   volumes:
     - name: dbdata
       consistency: postgres
@@ -149,7 +141,7 @@ state:
 
 security:
   network: true
-  allowHostFileImport: true
+  allowHostFileImport: false
 
 publisher:
   name: Example Inc.
@@ -234,12 +226,14 @@ For v1, use a deterministic archive plus extracted runtime copy.
 Package creation algorithm:
 	1.	read manifest
 	2.	validate schema
-	3.	normalize paths
-	4.	reject path traversal
-	5.	hash every file
-	6.	build package manifest with file digests
-	7.	sign root manifest
-	8.	emit .vibeapp
+	3.	load exclusion patterns from .vibeignore (plus built-in defaults: node_modules/, target/)
+	4.	normalize paths
+	5.	reject path traversal
+	6.	skip hidden files, .vibeapp files, .sig files, and .vibeignore-matched paths
+	7.	hash every included file
+	8.	build package manifest with file digests
+	9.	sign root manifest
+	10.	emit .vibeapp
 
 3.2 Signature verification
 

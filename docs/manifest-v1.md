@@ -12,37 +12,29 @@ name: Todo App
 version: 1.0.0
 icon: assets/icon.png
 
-runtime:
-  mode: native # native | compose
-  composeFile: compose.yaml
-
 services:
   - name: web
-    image: ghcr.io/example/todo-web:1.0.0
+    image: node:20-alpine
     command: ["node", "server.js"]
     env:
       NODE_ENV: production
     ports:
       - container: 3000
-        hostExposure: auto
     mounts:
-      - source: state:uploads
+      - source: uploads
         target: /data/uploads
-    dependsOn: ["db"]
+    dependOn: ["db"]
 
   - name: db
     image: postgres:16
     env:
       POSTGRES_DB: todo
       POSTGRES_USER: todo
-    stateVolumes:
-      - dbdata:/var/lib/postgresql/data
+    mounts:
+      - source: dbdata
+        target: /var/lib/postgresql/data
 
 state:
-  autosave: true
-  autosaveDebounceSeconds: 30
-  retention:
-    maxSnapshots: 100
   volumes:
     - name: dbdata
       consistency: postgres
@@ -51,7 +43,7 @@ state:
 
 security:
   network: true
-  allowHostFileImport: true
+  allowHostFileImport: false
 
 secrets:
   - name: OPENAI_API_KEY
@@ -78,17 +70,6 @@ publisher:
 | `name` | string | **required** | Human-readable app name |
 | `version` | string | **required** | Semver version string |
 | `icon` | string | optional | Relative path to icon asset within the package |
-
-### `runtime`
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `mode` | enum | **required** | `native` or `compose` |
-| `composeFile` | string | conditional | Relative path to Compose file. Required when `mode: compose`, ignored when `mode: native` |
-
-**Validation:**
-- When `mode: native`, services must be defined inline under `services`
-- When `mode: compose`, `composeFile` must point to a valid file within the package
 
 ### `services[]`
 
@@ -188,6 +169,50 @@ ui:
 | `signing.signatureFile` | string | **required** (if signing present) | Relative path to detached signature |
 | `signing.publicKeyFile` | string | **required** (if signing present) | Relative path to publisher public key |
 
+## Packaging: File Exclusion (`.vibeignore`)
+
+When `vibe package` bundles a project directory into a `.vibeapp`, it reads an optional
+`.vibeignore` file from the project root to exclude files and directories.
+
+**Built-in exclusions (always applied, no `.vibeignore` entry needed):**
+- `node_modules/`
+- `target/`
+
+Hidden files and directories (names starting with `.`), as well as any existing `.vibeapp`
+and `.sig` files, are also always excluded.
+
+**`.vibeignore` syntax:**
+
+```
+# Lines starting with # are comments. Blank lines are ignored.
+
+# A pattern WITHOUT '/' matches any file or directory with that name at any depth:
+dist/
+__pycache__/
+*.log
+
+# A pattern WITH an interior '/' is matched against the path relative to the project root:
+src/generated/schema.ts
+
+# * matches any sequence of characters; ? matches any single character.
+*.pyc
+build_*
+```
+
+**Example `.vibeignore` for a Node.js app:**
+
+```
+# Build output — the container builds at runtime, not package time
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+```
+
+`vibe init` creates a starter `.vibeignore` automatically.
+
 ## Validation Rules
 
 1. `kind` must be exactly `vibe.app/v1`
@@ -198,5 +223,3 @@ ui:
 6. Volume names referenced in `stateVolumes` or `mounts` must have a corresponding entry in `state.volumes`
 7. `dependsOn` references must point to service names defined in the same manifest
 8. Container ports must be in range 1-65535
-9. When `mode: compose`, the `services` array is ignored (services come from the Compose file)
-10. When `mode: native`, `composeFile` is ignored
