@@ -241,8 +241,24 @@ struct DocumentWindowView: View {
         await runtime.launchProject(project, secrets: secrets)
         if let ep = runtime.vmEndpoint(for: project) {
             schemeHandler = VibeSchemeHandler(vmIP: ep.vmIP, port: ep.hostPort)
+            startPortReadyPolling(vmIP: ep.vmIP, hostPort: ep.hostPort)
         }
         startVolumePolling()
+    }
+
+    private func startPortReadyPolling(vmIP: String, hostPort: UInt16) {
+        Task {
+            for _ in 0..<180 {  // up to 6 min (180 × 2s)
+                try? await Task.sleep(for: .seconds(2))
+                guard status == .running else { return }
+                guard webError != nil else { return }  // already connected
+                if await tcpPortOpen(host: vmIP, port: hostPort) {
+                    webError = nil
+                    webViewID = UUID()
+                    return
+                }
+            }
+        }
     }
 
     // MARK: - Volume polling
@@ -664,8 +680,10 @@ private struct ProjectInfoSheet: View {
 
                     // Files
                     GroupBox("Files (\(project.files.count))") {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(project.files.keys.sorted(), id: \.self) { file in
+                        let sortedFiles = project.files.keys.sorted()
+                        let displayLimit = 200
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(sortedFiles.prefix(displayLimit), id: \.self) { file in
                                 HStack {
                                     Image(systemName: "doc")
                                         .foregroundStyle(.secondary)
@@ -679,6 +697,12 @@ private struct ProjectInfoSheet: View {
                                             .foregroundStyle(.tertiary)
                                     }
                                 }
+                            }
+                            if sortedFiles.count > displayLimit {
+                                Text("… and \(sortedFiles.count - displayLimit) more files")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 2)
                             }
                         }
                         .padding(.vertical, 4)
