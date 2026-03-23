@@ -16,6 +16,7 @@ services:
 state:
   volumes:
     - name: data
+      consistency: generic
 
 security:
   network: true
