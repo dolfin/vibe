@@ -1,0 +1,44 @@
+---
+title: vibe revert
+description: Strip saved user state from a .vibeapp, restoring the original signed content.
+---
+
+## Synopsis
+
+```
+vibe revert <package> [options]
+```
+
+## Description
+
+Removes the `_vibe_state/` directory from a `.vibeapp` package, restoring it to its original signed content. Use this to produce a clean distribution package after testing an app locally (which may have accumulated state).
+
+## Arguments
+
+| Argument | Description |
+|---|---|
+| `<package>` | Path to the `.vibeapp` file |
+
+## Options
+
+| Flag | Description |
+|---|---|
+| `--password <pass>` | Password for an encrypted package (avoid — visible in shell history) |
+| `--password-file <path>` | Read password from a file |
+| `-h, --help` | Print help |
+
+## Examples
+
+```bash
+# Revert an unencrypted package
+vibe revert myapp.vibeapp
+
+# Revert an encrypted package
+vibe revert myapp.vibeapp --password-file secrets/pw.txt
+```
+
+## Notes
+
+- After reverting, re-sign the package before distributing: `vibe sign myapp.vibeapp --key signing.key`
+- Revert is non-destructive — it only removes `_vibe_state/` entries, not the manifest or assets
+- If the package has no state entries, `revert` is a no-op

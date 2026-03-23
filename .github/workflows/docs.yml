@@ -1,0 +1,16 @@
+name: Docs
+on:
+  push:
+    branches: [main]
+    paths: ['website/**', 'mint.json']
+  pull_request:
+    paths: ['website/**', 'mint.json']
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install -g mintlify
+      - run: mintlify broken-links

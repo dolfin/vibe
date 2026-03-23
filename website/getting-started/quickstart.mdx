@@ -1,0 +1,73 @@
+---
+title: Quickstart
+description: Get up and running with Vibe in under five minutes.
+---
+
+## Install the Vibe CLI
+
+```bash
+brew tap dolfin/vibe && brew install vibe
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/dolfin/vibe.git
+cd vibe
+make bootstrap
+cargo build -p vibe-cli --release
+# binary is at target/release/vibe
+```
+
+## Create your first app
+
+```bash
+vibe init myapp
+cd myapp
+```
+
+This creates a `vibe.yaml` with a minimal template. Open it in your editor and describe your services.
+
+## Validate the manifest
+
+```bash
+vibe validate vibe.yaml
+```
+
+Fix any errors reported before packaging.
+
+## Package the app
+
+```bash
+vibe package vibe.yaml -o myapp.vibeapp
+```
+
+## Generate a signing keypair
+
+```bash
+vibe keygen -o my-signing
+# creates my-signing.key (private) and my-signing.pub (public)
+```
+
+## Sign the package
+
+```bash
+vibe sign myapp.vibeapp --key my-signing.key
+```
+
+## Share it
+
+Send `myapp.vibeapp` to anyone running **macOS 14+** with the [Vibe player](https://github.com/dolfin/vibe/releases). They double-click it and it runs.
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Open an app" href="/getting-started/open-an-app">
+    Learn what happens when a recipient opens a .vibeapp
+  </Card>
+  <Card title="Package an app" href="/getting-started/package-an-app">
+    Deep dive into packaging options — encryption, seed data, signing
+  </Card>
+</CardGroup>

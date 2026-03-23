@@ -1,0 +1,81 @@
+---
+title: Package an App
+description: All the options for packaging, signing, and encrypting a .vibeapp.
+---
+
+## Basic packaging
+
+```bash
+vibe package vibe.yaml -o myapp.vibeapp
+```
+
+The output is a ZIP-based `.vibeapp` archive containing:
+- The `vibe.yaml` manifest
+- All referenced assets
+- Optional seed data (initial state)
+
+## With encryption
+
+```bash
+# Provide password on the command line (visible in shell history — avoid in CI)
+vibe package vibe.yaml -o myapp.vibeapp --password "my-secret-password"
+
+# Read password from a file (preferred)
+vibe package vibe.yaml -o myapp.vibeapp --password-file secrets/pw.txt
+
+# Omit --password to be prompted interactively (most secure)
+vibe package vibe.yaml -o myapp.vibeapp
+```
+
+Encrypted packages use **AES-256-GCM** with **Argon2id** key derivation (OWASP interactive profile: m=64 MiB, t=3, p=4).
+
+## With seed data
+
+Seed data is a directory of pre-populated content that gets embedded as the app's initial state. Each subdirectory becomes a signed `_vibe_initial_state/<name>.tar.gz` entry.
+
+```bash
+vibe package vibe.yaml -o myapp.vibeapp --seed-data ./initial-data/
+```
+
+Use this to ship apps with pre-loaded databases, sample files, or other data that should be present on first run.
+
+## Signing
+
+Always sign packages you distribute publicly:
+
+```bash
+# Generate a keypair (one-time setup)
+vibe keygen -o my-signing
+
+# Sign the package
+vibe sign myapp.vibeapp --key my-signing.key
+
+# For encrypted packages, provide the password to sign
+vibe sign myapp.vibeapp --key my-signing.key --password-file secrets/pw.txt
+```
+
+Keep `my-signing.key` private. Distribute `my-signing.pub` to users or embed it in the macOS host app for trusted verification.
+
+## Inspect before distributing
+
+```bash
+vibe inspect myapp.vibeapp
+```
+
+Shows the manifest contents, file listing, signature state, and whether encryption is present.
+
+## Verify the signature
+
+```bash
+vibe verify myapp.vibeapp --key my-signing.pub
+```
+
+Confirms the package hasn't been tampered with.
+
+## Distributing without signing (dev mode)
+
+During development you can skip signing. Recipients will see an "Unsigned (Dev Mode)" orange warning and must explicitly acknowledge running unsigned code.
+
+<Warning>
+Never distribute unsigned packages publicly. Always sign before sharing with end users.
+</Warning>

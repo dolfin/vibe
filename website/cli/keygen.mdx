@@ -1,0 +1,46 @@
+---
+title: vibe keygen
+description: Generate an Ed25519 signing keypair.
+---
+
+## Synopsis
+
+```
+vibe keygen [options]
+```
+
+## Description
+
+Generates a new Ed25519 keypair and writes two files:
+
+- `<output>.key` — private signing key (keep secret)
+- `<output>.pub` — public verification key (share freely)
+
+## Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `-o, --output <name>` | `vibe-signing` | Base name for the output files |
+| `-h, --help` | | Print help |
+
+## Examples
+
+```bash
+# Default output: vibe-signing.key and vibe-signing.pub
+vibe keygen
+
+# Custom output base name
+vibe keygen -o my-app-signing
+# Creates: my-app-signing.key and my-app-signing.pub
+
+# Store in a keys directory
+vibe keygen -o keys/production-signing
+```
+
+## Notes
+
+- Keep the `.key` file private and out of version control
+- The `.pub` file can be committed to your repo and distributed to users
+- Use the `.key` file with [`vibe sign`](/cli/sign)
+- Use the `.pub` file with [`vibe verify`](/cli/verify)
+- The macOS host app embeds a trusted public key for official packages

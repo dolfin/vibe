@@ -1,0 +1,98 @@
+---
+title: Snapshot Protocol
+description: How Vibe saves and restores app state — algorithms, consistency guarantees, and storage.
+---
+
+## Snapshot object model
+
+Every snapshot contains:
+
+| Field | Type | Description |
+|---|---|---|
+| `snapshotId` | UUID | Unique identifier |
+| `timestamp` | ISO 8601 | Creation time |
+| `parentSnapshotId` | UUID or null | Previous snapshot in chain |
+| `reason` | enum | `manual`, `autosave`, `before-upgrade`, `before-restore` |
+| `appVersion` | string | App version at time of snapshot |
+| `stateDigest` | SHA-256 | Hash over all snapshot content |
+| `volumeManifests` | map | Per-volume metadata (consistency type, format, size, digest) |
+| `labels` | map | User-defined key-value labels |
+
+## Save algorithm
+
+The save flow executes 10 steps in order:
+
+1. **Resolve target project** — look up the project and confirm it has a valid state path
+2. **Block concurrent operations** — acquire an exclusive save lock; reject concurrent start/stop/restore/save for this project
+3. **Run pre-save hooks** — execute consistency hooks per service based on each volume's `consistency` type
+4. **Wait for quiesce** — confirm all pre-save hooks completed and data is flushed
+5. **Checkpoint state** — create a point-in-time marker; for generic volumes, pause or snapshot at the filesystem level
+6. **Copy to snapshot workspace** — copy `current/files/` and `current/volumes/` into `snapshots/<timestamp>/`
+7. **Compute metadata** — hash all snapshot content, build volume manifests, generate `metadata.json`
+8. **Atomic index update** — write new index to temp file, fsync, rename over existing `index.json`
+9. **Release lock** — allow lifecycle operations to proceed
+10. **Resume services** — unpause any services paused for consistency
+
+**Failure guarantee:** If any step fails, the save aborts cleanly. `current/` is never modified during a save. The last good snapshot remains intact. Partial snapshot directories are cleaned up.
+
+## Consistency per volume type
+
+### SQLite (`consistency: sqlite`)
+
+1. Check no schema migration is actively writing
+2. `PRAGMA wal_checkpoint(TRUNCATE)` — flush WAL into the main DB file
+3. fsync the DB file and its parent directory
+4. Copy the `.db` file (WAL is now empty) into the snapshot workspace
+5. Run `PRAGMA integrity_check` on the copy and record the result
+
+### Postgres (`consistency: postgres`)
+
+- Execute `pg_dump` in custom format against the running Postgres instance
+- Store the dump in `snapshots/<timestamp>/volumes/`
+- The logical dump provides a transaction-consistent view without stopping the database
+- If dump fails, the save fails — no partial snapshots
+
+### Generic (`consistency: generic`)
+
+1. Pause or stop write-heavy containers (or run a registered pre-save hook)
+2. Tar-copy the entire volume directory
+3. Compute content digest
+4. Optionally compress in background after commit
+5. Resume paused containers
+
+## Chunked content-addressed storage
+
+Snapshot data is stored using a content-addressed chunk store to control disk growth across many snapshots.
+
+- Large files are split into ~1 MiB chunks, each identified by SHA-256 digest
+- Identical chunks across snapshots are stored only once (deduplication)
+- The chunk store is shared across all snapshots for a project
+
+```
+state/
+  chunks/
+    aa/
+      sha256:aaa111...    ← chunk data
+    bb/
+      sha256:bbb222...
+```
+
+Each snapshot's `metadata.json` references chunk digests rather than storing full file copies:
+
+```json
+{
+  "files": [
+    {
+      "path": "files/uploads/photo.jpg",
+      "size": 2097152,
+      "chunks": ["sha256:aaa111...", "sha256:bbb222..."]
+    }
+  ]
+}
+```
+
+### Garbage collection
+
+- A chunk is reclaimable when no snapshot manifest references it
+- GC runs periodically or on explicit trigger
+- Mark-and-sweep: mark all referenced chunks, sweep unreferenced — safe to run concurrently with reads

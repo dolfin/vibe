@@ -1,0 +1,63 @@
+---
+title: Validation Rules
+description: All rules enforced by vibe validate and at package time.
+---
+
+`vibe validate` checks these rules. The same rules are enforced when packaging.
+
+## Rules
+
+| # | Rule |
+|---|---|
+| 1 | `kind` must be exactly `vibe.app/v1` |
+| 2 | `id` must match `^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)+$` |
+| 3 | `version` must be valid semver |
+| 4 | All relative paths must not contain `..` (path traversal rejected) |
+| 5 | Service names must be unique within the manifest |
+| 6 | Volume names referenced in `stateVolumes` or `mounts` must have a corresponding entry in `state.volumes` |
+| 7 | `dependsOn` references must point to service names defined in the same manifest |
+| 8 | Container ports must be in range 1–65535 |
+| 9 | When `mode: compose`, the `services` array is ignored (services come from the Compose file) |
+| 10 | When `mode: native`, `composeFile` is ignored |
+
+## Common validation errors
+
+### Invalid `id`
+
+```
+error: id "my-app" does not match required pattern
+```
+
+Use reverse-domain notation: `com.example.myapp`
+
+### Duplicate service names
+
+```
+error: duplicate service name "web"
+```
+
+Every service must have a unique `name` within the manifest.
+
+### Unknown volume reference
+
+```
+error: service "web" mounts volume "uploads" which is not declared in state.volumes
+```
+
+Add `uploads` to the `state.volumes` list with a `consistency` type.
+
+### Cycle in `dependsOn`
+
+```
+error: dependency cycle detected: web -> api -> web
+```
+
+`dependsOn` must form a directed acyclic graph. No service can (directly or transitively) depend on itself.
+
+### Path traversal
+
+```
+error: path "../secret.key" contains ".." which is not allowed
+```
+
+All paths in the manifest must be relative and must not escape the package root.

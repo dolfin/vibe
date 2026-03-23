@@ -1,0 +1,33 @@
+---
+title: vibe import-compose
+description: Import a Docker Compose project as a Vibe app (coming soon).
+---
+
+## Synopsis
+
+```
+vibe import-compose
+```
+
+## Description
+
+Converts a Docker Compose file into a `vibe.yaml` manifest. This command is planned for a future release.
+
+## Status
+
+<Warning>
+`import-compose` is not yet implemented. Running it prints a "coming soon" message and exits.
+</Warning>
+
+## What it will do
+
+When implemented, `import-compose` will:
+
+1. Parse a `compose.yaml` / `docker-compose.yaml` in the current directory
+2. Map supported Compose fields to the Vibe native runtime model
+3. Flag unsupported fields (privileged mode, device passthrough, etc.)
+4. Generate a `vibe.yaml` with `runtime.mode: compose` pointing to the original Compose file
+
+## Compose compatibility
+
+See [Compose Compatibility](/internals/compose-compat) for the full field support matrix, including which fields are supported directly, which require transformation, and which are rejected.

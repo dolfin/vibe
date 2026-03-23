@@ -1,0 +1,62 @@
+---
+title: Top-Level Fields
+description: The root fields of a vibe.yaml manifest.
+---
+
+## Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | **required** | Must be `vibe.app/v1` |
+| `id` | string | **required** | Reverse-domain app identifier (e.g., `com.example.todo`) |
+| `name` | string | **required** | Human-readable app name |
+| `version` | string | **required** | Semver version string |
+| `icon` | string | optional | Relative path to icon asset within the package |
+
+## `runtime`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `mode` | enum | **required** | `native` or `compose` |
+| `composeFile` | string | conditional | Relative path to Compose file. Required when `mode: compose`, ignored when `mode: native` |
+
+**Validation:**
+- When `mode: native`, services must be defined inline under `services`
+- When `mode: compose`, `composeFile` must point to a valid file within the package; the `services` array is ignored
+
+## Examples
+
+### Minimal app
+
+```yaml
+kind: vibe.app/v1
+id: com.example.hello
+name: Hello World
+version: 1.0.0
+
+runtime:
+  mode: native
+
+services:
+  - name: web
+    image: nginx:alpine
+    ports:
+      - container: 80
+```
+
+### Compose-mode app
+
+```yaml
+kind: vibe.app/v1
+id: com.example.myapp
+name: My App
+version: 2.1.0
+
+runtime:
+  mode: compose
+  composeFile: compose.yaml
+```
+
+<Note>
+`id` must match the pattern `^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)+$` — reverse-domain format with at least two components. `version` must be valid semver (e.g., `1.0.0`, `2.3.1-beta.1`).
+</Note>

@@ -1,0 +1,40 @@
+---
+title: Security Overview
+description: How Vibe protects users and their data.
+---
+
+## Security model summary
+
+Vibe's security is built around three principles:
+
+1. **Trust before execution** — every package is verified before any code runs
+2. **Explicit capability grants** — apps declare what they need; users approve before first run
+3. **Isolation by default** — containers run with minimal privileges inside a VM
+
+## Security layers
+
+| Layer | Mechanism |
+|---|---|
+| [Package trust](/security/trust-model) | Ed25519 signature verification; four trust states |
+| [Package encryption](/security/package-encryption) | AES-256-GCM + Argon2id for password-protected packages |
+| [Capability prompts](/security/capability-prompts) | User approves network, file import, and port exposure |
+| [Runtime hardening](/security/runtime-hardening) | Dropped capabilities, read-only root, no privileged containers |
+| [Secrets](/security/secrets) | macOS Keychain storage; never persisted in plaintext |
+
+## What Vibe protects against
+
+- **Tampered packages** — any modification to the package after signing is detected and the app is blocked
+- **Unauthorized network access** — containers can't reach the internet unless the user explicitly approved it
+- **Host filesystem access** — containers are isolated in a VM; no access to host files unless the user imports them
+- **Privilege escalation** — no privileged containers, all Linux capabilities dropped by default
+- **Secret leakage** — secrets are stored in Keychain, never in packages or snapshots
+
+## What Vibe does not protect against
+
+- **Malicious code inside a trusted package** — trust is about integrity (the package hasn't been tampered with), not about auditing what the code does
+- **Compromised signing keys** — if a publisher's private key is stolen, their packages could be replaced with malicious ones
+- **VM escapes** — relies on Apple's Virtualization framework security
+
+<Note>
+Always review capability prompts carefully. An app requesting network access and host file import together has significant reach.
+</Note>

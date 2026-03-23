@@ -1,0 +1,100 @@
+---
+title: Manifest Overview
+description: The vibe.yaml manifest describes your app's services, state, security, and metadata.
+---
+
+## What is a manifest?
+
+Every Vibe app is defined by a `vibe.yaml` manifest. The manifest tells the Vibe runtime:
+
+- What container images to run
+- How services depend on each other
+- What state volumes to persist
+- What capabilities the app requires
+- Who published it and how to verify the signature
+
+## Kind
+
+All manifests must declare `kind: vibe.app/v1`:
+
+```yaml
+kind: vibe.app/v1
+```
+
+## Complete example
+
+```yaml
+kind: vibe.app/v1
+id: com.example.todo
+name: Todo App
+version: 1.0.0
+icon: assets/icon.png
+
+runtime:
+  mode: native
+
+services:
+  - name: web
+    image: ghcr.io/example/todo-web:1.0.0
+    command: ["node", "server.js"]
+    env:
+      NODE_ENV: production
+    ports:
+      - container: 3000
+        hostExposure: auto
+    mounts:
+      - source: state:uploads
+        target: /data/uploads
+    dependsOn: ["db"]
+
+  - name: db
+    image: postgres:16
+    env:
+      POSTGRES_DB: todo
+      POSTGRES_USER: todo
+    stateVolumes:
+      - dbdata:/var/lib/postgresql/data
+
+state:
+  autosave: true
+  autosaveDebounceSeconds: 30
+  retention:
+    maxSnapshots: 100
+  volumes:
+    - name: dbdata
+      consistency: postgres
+    - name: uploads
+      consistency: generic
+
+security:
+  network: true
+  allowHostFileImport: true
+
+secrets:
+  - name: OPENAI_API_KEY
+    required: true
+
+ui:
+  showBackButton: true
+  showReloadButton: true
+
+publisher:
+  name: Example Inc.
+  signing:
+    scheme: ed25519
+    signatureFile: signatures/package.sig
+    publicKeyFile: signatures/publisher.pub
+```
+
+## Sections
+
+| Section | Purpose |
+|---|---|
+| [Top-level fields](/manifest/top-level-fields) | `kind`, `id`, `name`, `version`, `icon`, `runtime` |
+| [services](/manifest/services) | Container definitions, ports, mounts, dependencies |
+| [state](/manifest/state) | Autosave, retention, named volumes |
+| [security](/manifest/security) | Network and host file import permissions |
+| [secrets](/manifest/secrets) | User-provided or encrypted secrets |
+| [ui](/manifest/ui) | WebView navigation controls |
+| [publisher](/manifest/publisher) | Publisher name and signing configuration |
+| [Validation rules](/manifest/validation-rules) | All rules enforced by `vibe validate` |

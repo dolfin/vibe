@@ -1,0 +1,73 @@
+---
+title: Package Encryption
+description: AES-256-GCM encryption with Argon2id key derivation for .vibeapp packages.
+---
+
+## Overview
+
+`.vibeapp` packages can be password-protected. Encryption prevents anyone without the password from inspecting the manifest, assets, or seed data.
+
+Encryption is implemented as an outer wrapper — the inner package structure is preserved intact. After decryption, the result is a normal `.vibeapp` archive.
+
+## Encrypted package structure
+
+An encrypted `.vibeapp` is a ZIP containing exactly two entries:
+
+| Entry | Contents |
+|---|---|
+| `_vibe_encryption.json` | KDF and cipher metadata |
+| `_vibe_encrypted_payload` | AES-256-GCM ciphertext (16-byte GCM tag appended) |
+
+## Encryption metadata
+
+`_vibe_encryption.json`:
+
+```json
+{
+  "version": 1,
+  "cipher": "aes-256-gcm",
+  "kdf": "argon2id",
+  "kdf_params": {
+    "m_cost": 65536,
+    "t_cost": 3,
+    "p_cost": 4,
+    "salt": "<64 hex chars>"
+  },
+  "nonce": "<24 hex chars>"
+}
+```
+
+**KDF parameters** follow the OWASP interactive profile: m=65536 (64 MiB), t=3, p=4. A fresh random 32-byte salt and 12-byte nonce are generated on every encryption call.
+
+## CLI usage
+
+```bash
+# Create an encrypted package
+vibe package vibe.yaml -o app.vibeapp --password-file secrets/pw.txt
+
+# All commands accept the same flags for encrypted packages
+vibe inspect app.vibeapp --password-file secrets/pw.txt
+vibe verify  app.vibeapp --key signing.pub --password-file secrets/pw.txt
+vibe sign    app.vibeapp --key signing.key --password-file secrets/pw.txt
+vibe revert  app.vibeapp --password-file secrets/pw.txt
+
+# Omit --password to be prompted interactively (most secure — not stored in shell history)
+vibe inspect app.vibeapp
+```
+
+## Host app behaviour
+
+1. On open, the host detects `_vibe_encryption.json` and shows a password prompt
+2. The package is decrypted in memory — plaintext bytes are never written to disk
+3. On every auto-save and explicit save, the package is re-encrypted with the same password and a fresh random nonce
+4. The password is held in memory for the document session and cleared on close
+
+## Security properties
+
+- Wrong password or corrupted ciphertext → decryption fails with a clear error; the app is never opened
+- Each encryption call produces unique ciphertext (fresh salt + nonce) — repeated saves are not linkable
+- Encryption is independent of signing — a package can be encrypted **and** signed
+
+## Combination with signing
+
+Encrypted packages can be signed. The signature covers the encrypted payload, not the plaintext. The verification flow decrypts first, then checks file digests on the inner package.

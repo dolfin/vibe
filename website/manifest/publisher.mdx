@@ -1,0 +1,44 @@
+---
+title: publisher
+description: Identify who built the app and configure package signing.
+---
+
+## Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | **required** | Publisher display name shown in the trust prompt |
+| `signing` | object | optional | Package signing configuration |
+| `signing.scheme` | enum | **required** (if signing present) | Must be `ed25519` |
+| `signing.signatureFile` | string | **required** (if signing present) | Relative path to the detached signature file within the package |
+| `signing.publicKeyFile` | string | **required** (if signing present) | Relative path to the publisher's public key within the package |
+
+## Example
+
+```yaml
+publisher:
+  name: Example Inc.
+  signing:
+    scheme: ed25519
+    signatureFile: signatures/package.sig
+    publicKeyFile: signatures/publisher.pub
+```
+
+## Signing workflow
+
+1. Generate a keypair: `vibe keygen -o my-signing`
+2. Package the app: `vibe package vibe.yaml -o myapp.vibeapp`
+3. Sign the package: `vibe sign myapp.vibeapp --key my-signing.key`
+4. The signing tool adds `signatures/package.sig` and `signatures/publisher.pub` to the archive and updates the manifest's `publisher.signing` fields
+
+## Trust store
+
+The Vibe macOS host app maintains a user-level trust store of public keys. When a signed package is opened:
+
+- If the publisher's public key is in the trust store → **Signed + Trusted** (green)
+- If valid but not in trust store → **Signed + Untrusted** (yellow, prompt to trust)
+- If signature is invalid or content is tampered → **Tampered** (red block)
+
+<Note>
+Omitting `publisher.signing` is fine for development. Recipients will see an "Unsigned (Dev Mode)" warning. Always sign packages you distribute publicly.
+</Note>

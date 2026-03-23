@@ -1,0 +1,60 @@
+---
+title: macOS Host App
+description: Architecture of the Vibe Swift macOS application.
+---
+
+## Overview
+
+The Vibe macOS app (`apps/mac-host/`) is a Swift application built on AppKit and SwiftUI. It manages the Alpine Linux VM lifecycle, project registration, package verification, and the embedded WebView that displays app UIs.
+
+## Key components
+
+| File | Responsibility |
+|---|---|
+| `VMManager.swift` | VM lifecycle via Apple Virtualization framework — starts, stops, and monitors the single persistent Alpine Linux VM |
+| `ProjectLifecycleManager.swift` | Project registration, open/start/stop, state snapshot coordination |
+| `ContainerRuntimeClient.swift` | RPC to the VM supervisor daemon over vsock (protobuf transport) |
+| `PackageExtractor.swift` | ZIP extraction and state unpacking from `.vibeapp` archives |
+| `StorageManager.swift` | Package cache on the persistent data disk; state directory layout |
+| `PackageVerifier.swift` | Validates Ed25519 signatures using the embedded public key |
+| `VibeSchemeHandler.swift` | `WKURLSchemeHandler` for internal `vibe://` scheme routing |
+
+## VM lifecycle
+
+The app maintains a **single persistent Alpine Linux VM** shared across all open projects. The VM is started on first project open and kept running as long as any project is active.
+
+- VM start is handled by `VMManager` using Apple's `VZVirtualMachine` API
+- The VM boots from a kernel + initrd bundled in the app's `Resources/` directory
+- A persistent data disk is attached for package cache and state storage
+
+## Project lifecycle
+
+For each `.vibeapp` the user opens:
+
+1. `PackageVerifier` checks the Ed25519 signature → assigns trust state
+2. `PackageExtractor` extracts the archive to the package cache
+3. `ProjectLifecycleManager` registers the project via the `EnsureProject` RPC
+4. Services are opened (`OpenProject`) and started (`StartProject`) via vsock RPC
+5. A `WKWebView` is connected to the primary service port
+
+## State snapshots
+
+Auto-save runs every 30 seconds (configurable via `state.autosaveDebounceSeconds`). Up to 100 snapshots are kept per project (configurable via `state.retention.maxSnapshots`). Snapshots are triggered via the `SaveSnapshot` RPC and stored in the project's state directory on the data disk.
+
+## Scheme handler
+
+`VibeSchemeHandler` handles `vibe://` URLs for internal routing — used for host-to-WebView communication, capability prompt responses, and secret injection UI.
+
+## Build
+
+```bash
+cd apps/mac-host && swift build
+cd apps/mac-host && swift test
+```
+
+Or from the repo root:
+
+```bash
+make build   # builds Rust workspace + Swift host app
+make test    # runs Rust + Swift test suites
+```

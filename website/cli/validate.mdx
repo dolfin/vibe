@@ -1,0 +1,56 @@
+---
+title: vibe validate
+description: Validate a vibe.yaml manifest.
+---
+
+## Synopsis
+
+```
+vibe validate [manifest]
+```
+
+## Description
+
+Parses and validates a `vibe.yaml` manifest against all [validation rules](/manifest/validation-rules). Prints a success message or a list of errors.
+
+## Arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `[manifest]` | `vibe.yaml` | Path to the manifest file |
+
+## Options
+
+```
+-h, --help  Print help
+```
+
+## Examples
+
+```bash
+# Validate vibe.yaml in current directory
+vibe validate
+
+# Validate a specific file
+vibe validate path/to/vibe.yaml
+```
+
+## Output
+
+On success:
+
+```
+✓ Manifest is valid
+```
+
+On failure, each error is printed with a description:
+
+```
+error: id "my-app" does not match required pattern
+error: service "cache" depends on "redis" which is not defined
+```
+
+## Notes
+
+- Validation is also run automatically during `vibe package` — you don't need to run `validate` separately before packaging
+- Exit code `0` on success, non-zero on any validation error

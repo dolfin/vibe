@@ -1,0 +1,45 @@
+---
+title: Capability Prompts
+description: How Vibe asks users to approve the permissions an app requests.
+---
+
+## How capability prompts work
+
+Before an app runs for the first time, Vibe shows the user a single prompt listing all capabilities the app requests. The user can:
+
+- **Accept all** — all capabilities are granted
+- **Reject individual capabilities** — the corresponding features are disabled
+- **Cancel** — the app does not open
+
+Decisions are saved per project instance. The user can change them later in project settings.
+
+## Capabilities
+
+| Capability | Triggered by | Prompt text |
+|---|---|---|
+| **Network access** | `security.network: true` | "This app requests outbound internet access" |
+| **Host file import** | `security.allowHostFileImport: true` | "This app can import files from your Mac" |
+| **Port exposure** | Any service with `ports[].hostExposure: auto` | "This app will listen on a local network port" |
+| **Large disk usage** | State size exceeds threshold | "This app may use significant disk space" |
+| **Background execution** | _(future — deferred in v1)_ | "This app requests running when the window is closed" |
+
+## Effect of rejected capabilities
+
+| Capability | Effect of rejection |
+|---|---|
+| Network access | All outbound traffic from containers is blocked |
+| Host file import | File import UI is disabled |
+| Port exposure | Ports with `hostExposure: auto` are not exposed on the host |
+
+Inter-service traffic within the app is always allowed regardless of the network capability decision.
+
+## Per-instance decisions
+
+Decisions are scoped to the project instance — not the app ID. Two instances of the same `.vibeapp` opened at different times have independent capability decisions. This means:
+
+- Duplicating a project instance does not inherit capability decisions
+- Opening the same `.vibeapp` a second time creates a new instance with its own prompt
+
+## Changing decisions
+
+Capability decisions can be reviewed and changed in the project's settings panel within the Vibe macOS app at any time after first open.

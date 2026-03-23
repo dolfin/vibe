@@ -1,0 +1,61 @@
+---
+title: CLI Overview
+description: The vibe command-line tool for packaging, signing, and managing .vibeapp files.
+---
+
+## Installation
+
+```bash
+brew tap dolfin/vibe && brew install vibe
+```
+
+Or build from source:
+
+```bash
+cargo build -p vibe-cli --release
+```
+
+## Commands
+
+| Command | Description |
+|---|---|
+| [`vibe init <name>`](/cli/init) | Initialize a new Vibe application project |
+| [`vibe validate [vibe.yaml]`](/cli/validate) | Validate a manifest |
+| [`vibe package <manifest>`](/cli/package) | Package an app into a `.vibeapp` |
+| [`vibe sign <package>`](/cli/sign) | Sign a package with Ed25519 |
+| [`vibe verify <package>`](/cli/verify) | Verify a package signature |
+| [`vibe keygen`](/cli/keygen) | Generate an Ed25519 signing keypair |
+| [`vibe inspect <package>`](/cli/inspect) | Inspect package contents |
+| [`vibe revert <package>`](/cli/revert) | Strip saved state from a package |
+| [`vibe import-compose`](/cli/import-compose) | Import from Docker Compose (coming soon) |
+| [`vibe install-hooks`](/cli/install-hooks) | Install AI coding assistant skills |
+
+## Global flags
+
+```
+-h, --help     Print help
+-V, --version  Print version
+```
+
+## Password flags
+
+Commands that work with encrypted packages accept these flags:
+
+| Flag | Description |
+|---|---|
+| `--password <pass>` | Password on the command line (avoid — visible in shell history) |
+| `--password-file <path>` | Read password from a file |
+| _(omit both)_ | Prompted interactively (most secure) |
+
+## Man page
+
+```bash
+man vibe
+```
+
+Or generate it locally:
+
+```bash
+make man   # writes man/vibe.1
+man man/vibe.1
+```

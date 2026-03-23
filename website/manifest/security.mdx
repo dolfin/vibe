@@ -1,0 +1,39 @@
+---
+title: security
+description: Declare the capabilities your app requests from the host.
+---
+
+## Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `network` | bool | optional | App requests outbound network access. Default: `false` |
+| `allowHostFileImport` | bool | optional | App requests ability to import files from the host Mac. Default: `false` |
+
+## How capabilities work
+
+Declared capabilities are shown to the user in a prompt before the app's first run. The user can accept all, reject individual ones, or cancel entirely.
+
+- **Rejected capabilities** disable the corresponding feature — no outbound traffic if network is denied
+- **Decisions are persisted** per project instance and can be changed in project settings
+- **All containers run without privileges** regardless of capability settings
+
+## Example
+
+```yaml
+security:
+  network: true
+  allowHostFileImport: false
+```
+
+## Capability descriptions shown to users
+
+| Capability | Prompt text |
+|---|---|
+| `security.network: true` | "This app requests outbound internet access" |
+| `security.allowHostFileImport: true` | "This app can import files from your Mac" |
+| Port with `hostExposure: auto` | "This app will listen on a local network port" |
+
+<Note>
+Setting `network: false` (or omitting it) blocks all outbound traffic from containers. Inter-service traffic within the app is always allowed regardless of this setting.
+</Note>

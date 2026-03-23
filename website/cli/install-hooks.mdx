@@ -1,0 +1,55 @@
+---
+title: vibe install-hooks
+description: Install AI coding assistant skills for Vibe development.
+---
+
+## Synopsis
+
+```
+vibe install-hooks [options]
+```
+
+## Description
+
+Installs Vibe-specific skill files into AI coding assistant configurations (Claude Code, Codex, Cursor, GitHub Copilot). Skills teach the AI assistant about Vibe's manifest format, CLI, and packaging workflow so it can provide accurate, context-aware suggestions.
+
+## Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--tool <tool>` | `all` | Which tool to install for: `claude`, `codex`, `cursor`, `copilot`, `all` |
+| `--scope <scope>` | `project` | Where to install: `project` (current directory) or `user` (home directory) |
+| `--force` | false | Overwrite existing skill files |
+| `-h, --help` | | Print help |
+
+## Examples
+
+```bash
+# Install for all tools in the current project
+vibe install-hooks
+
+# Install only for Claude Code, project-scoped
+vibe install-hooks --tool claude --scope project
+
+# Install for all tools, user-scoped (available in all projects)
+vibe install-hooks --scope user
+
+# Overwrite existing skill files
+vibe install-hooks --force
+```
+
+## What gets installed
+
+| Tool | File location |
+|---|---|
+| Claude Code | `.claude/skills/vibe/SKILL.md` |
+| Codex | `.codex/skills/vibe.md` |
+| Cursor | `.cursor/skills/vibe.md` |
+| GitHub Copilot | `.github/copilot-instructions.md` (appended) |
+
+## Notes
+
+- `project` scope installs into the current working directory
+- `user` scope installs into your home directory (`~/.claude/`, `~/.codex/`, etc.)
+- Skill files contain the Vibe manifest schema, CLI reference, and packaging best practices
+- Run with `--force` to update skill files when you upgrade the Vibe CLI

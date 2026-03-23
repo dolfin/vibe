@@ -1,0 +1,72 @@
+---
+title: VM Runtime
+description: How Vibe uses a persistent Alpine Linux VM to run app containers.
+---
+
+## Architecture
+
+Vibe runs a **single persistent Alpine Linux VM** shared across all open projects. The VM is managed by the macOS host app using Apple's Virtualization framework.
+
+```
+macOS host app
+  └── VZVirtualMachine (Apple Virtualization)
+        └── Alpine Linux VM
+              └── containerd daemon
+                    ├── namespace: project-abc123
+                    │     ├── container: web
+                    │     └── container: db
+                    └── namespace: project-def456
+                          └── container: api
+```
+
+## VM components
+
+| Component | Description |
+|---|---|
+| Kernel | Bundled in `Resources/kernel` — built by `vm-image/build.sh` |
+| initrd | Bundled in `Resources/initrd` — Alpine Linux with containerd |
+| Data disk | Persistent virtual disk attached for package cache and state |
+| vsock | Communication channel between host app and VM supervisor |
+
+## Networking
+
+- The VM has a NAT interface for outbound internet access (gated by the `security.network` capability)
+- Each project gets its own CNI bridge network inside the VM
+- Port forwarding maps container ports to random host ports when `hostExposure: auto` is set
+- Inter-project network traffic is blocked at the CNI level
+
+## containerd namespaces
+
+Each opened project is assigned its own containerd namespace. This provides:
+
+- Service name isolation — two projects can both have a service named `web` without conflict
+- Resource cleanup — deleting a project's namespace removes all its containers and networks atomically
+- Log isolation — log streams are per-namespace
+
+## Image management
+
+Images are pulled by the VM supervisor on `OpenProject`. Images are cached in the containerd image store on the persistent data disk. If an image is already present, it is not re-pulled.
+
+## Building the VM image
+
+```bash
+make bundle-vm
+```
+
+This runs `vm-image/build.sh`, which builds the Alpine Linux kernel and initrd without requiring Docker. The outputs are copied to `apps/mac-host/VibeHost/Resources/`.
+
+## v1 scope
+
+v1 includes:
+- One persistent Linux VM
+- One containerd daemon in the VM
+- One namespace per opened project
+- SQLite and Postgres persistence
+- Host port forwarding
+- Logs, start, stop, save, restore, duplicate
+
+Deferred for future releases:
+- Multi-user collaboration
+- Cloud sync / distributed snapshots
+- Live migration
+- Build-your-own image pipeline in the app UI

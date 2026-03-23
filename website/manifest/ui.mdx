@@ -1,0 +1,52 @@
+---
+title: ui
+description: Control the navigation chrome shown in the app's embedded WebView window.
+---
+
+## Fields
+
+All fields default to `false`. Omitting the `ui` section entirely shows no navigation controls.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `showBackButton` | bool | optional | Show a back-navigation button. Default: `false` |
+| `showForwardButton` | bool | optional | Show a forward-navigation button. Default: `false` |
+| `showReloadButton` | bool | optional | Show a reload / stop-loading button. Default: `false` |
+| `showHomeButton` | bool | optional | Show a home button that returns to the app's root URL. Default: `false` |
+
+<Note>
+⌘F Find-in-page works natively in the WebView without any manifest option.
+</Note>
+
+## Examples
+
+### No navigation (default)
+
+```yaml
+# Omit the ui section entirely
+```
+
+### Back and forward only
+
+```yaml
+ui:
+  showBackButton: true
+  showForwardButton: true
+```
+
+### Full navigation bar
+
+```yaml
+ui:
+  showBackButton: true
+  showForwardButton: true
+  showReloadButton: true
+  showHomeButton: true
+```
+
+## When to show navigation
+
+- **Single-page apps** — typically no navigation needed
+- **Multi-page apps or apps that link to documentation** — consider back/forward buttons
+- **Apps that make network requests** — a reload button is helpful for recovery
+- **Apps with a defined home screen** — use the home button to always return to the root

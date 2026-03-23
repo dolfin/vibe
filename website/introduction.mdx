@@ -1,0 +1,73 @@
+---
+title: Introduction
+description: Turn AI-built apps into files you can share and open anywhere.
+---
+
+# Vibe
+
+**Vibe** lets you package an AI-built app into a single file and send it to anyone. They open it with the Vibe player on their Mac and run it safely — no setup, no terminals, no dev stack required. Sharing software feels like sending a file, not deploying an app.
+
+## What is a .vibeapp?
+
+A `.vibeapp` is a self-contained archive that bundles your application manifest, container images, and optional seed data into one portable file. The Vibe macOS player verifies the package signature, spins up a lightweight Alpine Linux VM, and runs your services using containerd — all transparently.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="One file to share" icon="file-archive">
+    Your whole app ships as a single `.vibeapp` — email it, share a link, or send it over Slack.
+  </Card>
+  <Card title="No installation for recipients" icon="circle-check">
+    Opens like any document on macOS. Recipients need only the Vibe player.
+  </Card>
+  <Card title="Runs safely in a sandbox" icon="shield">
+    Fully isolated from the host system. Capabilities are declared up-front and prompted before first run.
+  </Card>
+  <Card title="State is preserved" icon="floppy-disk">
+    Apps remember what they were doing. Auto-save snapshots every 30 seconds, up to 100 per app.
+  </Card>
+  <Card title="Password protection" icon="lock">
+    Optionally encrypt packages with AES-256-GCM before sharing. Recipients need the password to open.
+  </Card>
+  <Card title="Works with any AI-built stack" icon="layer-group">
+    Node, Python, Postgres, Redis — anything containerized. Bring your own images.
+  </Card>
+</CardGroup>
+
+## How It Works
+
+Vibe has two parts: a **CLI** (for developers packaging apps) and a **macOS player** (for everyone running them).
+
+### Packaging (CLI)
+
+1. Write a `vibe.yaml` manifest describing your app's services
+2. `vibe package` bundles everything into a ZIP-based `.vibeapp` archive
+3. `vibe sign` signs the package with Ed25519; SHA-256 hashes every file
+4. Optionally encrypt with AES-256-GCM via `--password`
+
+### Running (macOS player)
+
+1. The host app verifies the Ed25519 signature before launching
+2. A persistent Alpine Linux VM starts via Apple's Virtualization framework
+3. containerd runs your app's services inside the VM
+4. State snapshots save automatically every 30 seconds (up to 100 per app)
+
+## Requirements
+
+| Role | Requirement |
+|---|---|
+| **Open .vibeapp files** | macOS 14 (Sonoma) or later |
+| **Package and sign apps** | Rust toolchain (for building from source) |
+
+## Architecture
+
+| Component | Language | Role |
+|---|---|---|
+| `vibe-cli` | Rust | Package, sign, verify, inspect `.vibeapp` files |
+| `vibe-manifest` | Rust | Manifest parsing and validation |
+| `vibe-signing` | Rust | Ed25519 keygen, sign, verify, SHA-256 hashing |
+| `Vibe` (macOS) | Swift | macOS UI, VM lifecycle, project library |
+
+<Note>
+Vibe is open source under the MIT license. Source code is at [github.com/dolfin/vibe](https://github.com/dolfin/vibe).
+</Note>

@@ -1,0 +1,59 @@
+---
+title: vibe inspect
+description: Inspect the contents of a .vibeapp package.
+---
+
+## Synopsis
+
+```
+vibe inspect <package> [options]
+```
+
+## Description
+
+Prints the manifest contents, file listing, signature state, and encryption status of a `.vibeapp` package without extracting it.
+
+## Arguments
+
+| Argument | Description |
+|---|---|
+| `<package>` | Path to the `.vibeapp` file to inspect |
+
+## Options
+
+| Flag | Description |
+|---|---|
+| `--password <pass>` | Password for an encrypted package (avoid — visible in shell history) |
+| `--password-file <path>` | Read password from a file |
+| `-h, --help` | Print help |
+
+## Examples
+
+```bash
+# Inspect an unencrypted package
+vibe inspect myapp.vibeapp
+
+# Inspect an encrypted package
+vibe inspect myapp.vibeapp --password-file secrets/pw.txt
+
+# Prompted for password interactively
+vibe inspect myapp.vibeapp
+```
+
+## Output
+
+The output includes:
+
+- **App metadata** — id, name, version, icon path
+- **Services** — each service name, image, ports, and volumes
+- **Capabilities** — declared security settings
+- **Secrets** — names of declared secrets (values are never shown)
+- **State config** — autosave setting and volume consistency types
+- **Signature status** — signed/unsigned, publisher name if signed
+- **Encryption** — whether the package is encrypted
+- **File listing** — all files in the archive with sizes
+
+## Notes
+
+- Use `inspect` to confirm a package looks correct before signing or distributing
+- Inspect can be run on encrypted packages — you'll be prompted for the password

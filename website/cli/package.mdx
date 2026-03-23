@@ -1,0 +1,62 @@
+---
+title: vibe package
+description: Package a Vibe application into a .vibeapp archive.
+---
+
+## Synopsis
+
+```
+vibe package [manifest] [options]
+```
+
+## Description
+
+Validates the manifest, then bundles the manifest and all referenced assets into a ZIP-based `.vibeapp` archive. Optionally embeds seed data as the app's initial state and encrypts the output.
+
+## Arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `[manifest]` | `vibe.yaml` | Path to the manifest file |
+
+## Options
+
+| Flag | Description |
+|---|---|
+| `-o, --output <path>` | Output path for the `.vibeapp` file. Defaults to `<app-name>.vibeapp` |
+| `--seed-data <dir>` | Directory of pre-populated seed data to embed as initial state |
+| `--password <pass>` | Encrypt the output with this password (avoid — visible in shell history) |
+| `--password-file <path>` | Read encryption password from a file |
+| `-h, --help` | Print help |
+
+## Examples
+
+```bash
+# Basic package
+vibe package vibe.yaml -o myapp.vibeapp
+
+# With explicit output path
+vibe package vibe.yaml -o dist/myapp-1.0.0.vibeapp
+
+# With seed data
+vibe package vibe.yaml -o myapp.vibeapp --seed-data ./initial-db/
+
+# Encrypted (prompted interactively — most secure)
+vibe package vibe.yaml -o myapp.vibeapp
+
+# Encrypted with password file
+vibe package vibe.yaml -o myapp.vibeapp --password-file secrets/pw.txt
+```
+
+## Seed data
+
+The `--seed-data` directory is embedded as signed `_vibe_initial_state/<name>.tar.gz` entries. Each subdirectory of the seed data directory becomes one entry. This is used to ship apps with pre-populated databases or sample files.
+
+## Encryption
+
+Encrypted packages use **AES-256-GCM** with **Argon2id** key derivation. The inner package structure is preserved intact; encryption is applied as an outer wrapper. See [Package Encryption](/security/package-encryption) for full details.
+
+## Notes
+
+- Manifest validation runs automatically; packaging fails if the manifest is invalid
+- Encrypted packages can still be signed: `vibe sign myapp.vibeapp --key signing.key --password-file pw.txt`

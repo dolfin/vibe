@@ -1,0 +1,50 @@
+---
+title: vibe sign
+description: Sign a .vibeapp package with an Ed25519 key.
+---
+
+## Synopsis
+
+```
+vibe sign <package> --key <key-file> [options]
+```
+
+## Description
+
+Creates a deterministic SHA-256 hash over all files in the package (sorted by path in a BTreeMap), signs the hash with the provided Ed25519 private key, and embeds the detached signature and public key into the archive.
+
+## Arguments
+
+| Argument | Description |
+|---|---|
+| `<package>` | Path to the `.vibeapp` file to sign |
+
+## Options
+
+| Flag | Description |
+|---|---|
+| `--key <path>` | **(required)** Path to the Ed25519 private key file |
+| `--password <pass>` | Password for an encrypted package (avoid — visible in shell history) |
+| `--password-file <path>` | Read password from a file |
+| `-h, --help` | Print help |
+
+## Examples
+
+```bash
+# Sign an unencrypted package
+vibe sign myapp.vibeapp --key my-signing.key
+
+# Sign an encrypted package
+vibe sign myapp.vibeapp --key my-signing.key --password-file secrets/pw.txt
+
+# Prompted for password interactively
+vibe sign myapp.vibeapp --key my-signing.key
+```
+
+## Notes
+
+- Generate a keypair with [`vibe keygen`](/cli/keygen)
+- Keep the `.key` file private; distribute or embed the `.pub` file
+- A package can be both encrypted and signed
+- Signing a package that is already signed replaces the existing signature
+- Verify the result with [`vibe verify`](/cli/verify)

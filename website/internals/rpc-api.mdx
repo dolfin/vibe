@@ -1,0 +1,197 @@
+---
+title: RPC API
+description: Protobuf-over-vsock API between the macOS host app and the VM supervisor daemon.
+---
+
+## Transport
+
+All RPCs are between the macOS host app and the VM supervisor daemon over **vsock** using **protobuf** serialization.
+
+## Methods
+
+### 1. EnsureProject
+
+Register a project in the supervisor's registry. Idempotent.
+
+**Request:** `project_id`, `app_id`, `package_path`, `state_path`, `manifest`
+
+**Response:** `project_id`, `namespace`, `created`
+
+**Errors:** `INVALID_MANIFEST`, `PATH_NOT_FOUND`, `CONFLICT`
+
+---
+
+### 2. OpenProject
+
+Load a project into memory, pull required images, prepare runtime plan. Does not start services.
+
+**Request:** `project_id`
+
+**Response:** `project_id`, `services[]`, `images_pulled`, `warnings[]`
+
+**Errors:** `NOT_FOUND`, `IMAGE_PULL_FAILED`, `ALREADY_OPEN`
+
+---
+
+### 3. StartProject
+
+Start all services in dependency order.
+
+**Request:** `project_id`, `secrets` (map of env var → value)
+
+**Response:** `project_id`, `services[]`, `ports[]`
+
+**Errors:** `NOT_FOUND`, `NOT_OPEN`, `ALREADY_RUNNING`, `START_FAILED`, `MISSING_SECRET`
+
+---
+
+### 4. StopProject
+
+Stop all services. Graceful shutdown with configurable timeout.
+
+**Request:** `project_id`, `timeout_seconds` (default: 30)
+
+**Response:** `project_id`, `services[]`
+
+**Errors:** `NOT_FOUND`, `NOT_RUNNING`
+
+---
+
+### 5. DeleteProjectRuntime
+
+Remove all runtime resources (containers, networks, namespace). Does not delete state or snapshots.
+
+**Request:** `project_id`, `force`
+
+**Response:** `project_id`, `resources_removed`
+
+**Errors:** `NOT_FOUND`, `STILL_RUNNING`
+
+---
+
+### 6. ListProjects
+
+List all registered projects.
+
+**Request:** `filter_status` (optional: `running`, `stopped`, etc.)
+
+**Response:** `projects[]` (each: `project_id`, `app_id`, `name`, `status`, `service_count`, `port_count`)
+
+---
+
+### 7. GetProjectStatus
+
+Get detailed status for a single project.
+
+**Response fields:** `project_id`, `app_id`, `name`, `version`, `status`, `services[]`, `ports[]`, `state_size_bytes`, `snapshot_count`, `autosave_enabled`
+
+**Errors:** `NOT_FOUND`
+
+---
+
+### 8. GetProjectLogs
+
+Stream or fetch logs for a project's services.
+
+**Request:** `project_id`, `service_name` (optional filter), `follow`, `tail_lines` (default: 100)
+
+**Response (stream):** `entries[]` — each: `timestamp`, `service_name`, `stream` (stdout/stderr), `line`
+
+---
+
+### 9. SaveSnapshot
+
+Create a snapshot of the current project state.
+
+**Request:** `project_id`, `reason` (`manual`, `autosave`, `before-upgrade`, `before-restore`), `labels`
+
+**Response:** `snapshot_id`, `timestamp`, `state_digest`, `size_bytes`
+
+**Errors:** `NOT_FOUND`, `SAVE_IN_PROGRESS`, `SAVE_FAILED`
+
+---
+
+### 10. RestoreSnapshot
+
+Restore state from a previous snapshot.
+
+**Request:** `project_id`, `snapshot_id`, `create_safety_snapshot` (default: true)
+
+**Response:** `project_id`, `restored_snapshot_id`, `safety_snapshot_id`, `services[]`
+
+**Errors:** `NOT_FOUND`, `SNAPSHOT_MISMATCH`, `RESTORE_FAILED`
+
+---
+
+### 11. ListSnapshots
+
+List all snapshots for a project, newest first.
+
+**Response:** `snapshots[]` — each: `snapshot_id`, `timestamp`, `parent_snapshot_id`, `reason`, `app_version`, `state_digest`, `size_bytes`, `labels`
+
+---
+
+### 12. DuplicateProject
+
+Clone a project instance, optionally from a specific snapshot.
+
+**Request:** `source_project_id`, `new_project_id`, `snapshot_id` (optional)
+
+**Response:** `new_project_id`, `namespace`, `state_path`
+
+**Errors:** `NOT_FOUND`, `DUPLICATE_FAILED`
+
+---
+
+### 13. ImportPackage
+
+Import a `.vibeapp` package into the VM and register it.
+
+**Request:** `package_data_path`, `verify_signature`
+
+**Response:** `app_id`, `name`, `version`, `trust_status`, `package_path`, `capabilities[]`
+
+**Errors:** `PATH_NOT_FOUND`, `INVALID_PACKAGE`, `SIGNATURE_INVALID`, `TAMPERED`
+
+---
+
+### 14. ValidateCompose
+
+Validate a Compose file against the supported subset and return an import report.
+
+**Request:** `compose_content` (bytes)
+
+**Response:** `valid`, `services[]`, `supported_fields[]`, `transformed_fields[]`, `rejected_fields[]`, `warnings[]`
+
+---
+
+### 15. ResolvePorts
+
+Query or refresh host port allocations for a project.
+
+**Request:** `project_id`, `refresh`
+
+**Response:** `ports[]` — each: `service_name`, `container_port`, `host_port`, `protocol`
+
+**Errors:** `NOT_FOUND`, `NOT_RUNNING`, `PORT_CONFLICT`
+
+## Common types
+
+### ServiceStatus
+
+| Field | Type |
+|---|---|
+| `name` | string |
+| `status` | `stopped` \| `starting` \| `running` \| `stopping` \| `failed` |
+| `container_id` | string |
+| `started_at` | ISO 8601 |
+| `restart_count` | int32 |
+
+### PortMapping
+
+| Field | Type |
+|---|---|
+| `service_name` | string |
+| `container_port` | int32 |
+| `host_port` | int32 |
+| `protocol` | `tcp` \| `udp` |

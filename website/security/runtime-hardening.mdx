@@ -1,0 +1,43 @@
+---
+title: Runtime Hardening
+description: Default container security policies applied to all Vibe apps.
+---
+
+## Default container security
+
+All containers run with restrictive defaults. No container in v1 runs privileged.
+
+| Policy | Setting |
+|---|---|
+| **Dropped capabilities** | All Linux capabilities dropped by default. Only `NET_BIND_SERVICE` retained if the service binds to ports < 1024 |
+| **Read-only root filesystem** | Enabled where possible. Services that need a writable root get explicit writable overlay mounts |
+| **No host PID namespace** | Containers never share the host PID namespace |
+| **No privileged mode** | `privileged: true` is rejected — in both native manifests and Compose imports |
+| **Limited writable mounts** | Only explicitly declared volumes and state mounts are writable; all other paths are read-only |
+| **No host network** | Containers use project-scoped bridge networking; host network mode is not available |
+| **No device passthrough** | No `/dev` device mounts in v1 |
+
+## Network isolation
+
+- Each project gets its own CNI network
+- Inter-project network traffic is blocked
+- Outbound internet access requires the `security.network` capability to be granted by the user
+- If network capability is denied, all outbound traffic is blocked (except inter-service traffic within the project)
+
+## Compose imports
+
+The same hardening rules apply to Compose-imported apps. Fields that violate these policies are rejected during import:
+
+| Rejected Compose field | Reason |
+|---|---|
+| `privileged: true` | No privileged containers in v1 |
+| `cap_add` | Capabilities cannot be added |
+| `pid: host` | No host PID namespace sharing |
+| `network_mode: host` | No host network mode |
+| `devices` | No device passthrough |
+| `sysctls` | No sysctl modification |
+| `security_opt` | Managed by runtime hardening |
+
+## VM isolation
+
+All containers run inside a persistent Alpine Linux VM managed via Apple's Virtualization framework. This provides an additional hardware-level isolation boundary between the containers and the macOS host.

@@ -1,0 +1,108 @@
+---
+title: State Layout
+description: Directory structure for a project's mutable state on disk.
+---
+
+## Directory structure
+
+```
+state/
+  current/
+    files/
+    volumes/
+    runtime/
+      env.json
+      ports.json
+      service-state.json
+  snapshots/
+    <timestamp>/
+      files/
+      volumes/
+      metadata.json
+  index.json
+```
+
+## Reference
+
+### `state/`
+
+Root of all mutable state for a single project instance. Each project instance has its own completely independent state directory, separate from the immutable package.
+
+### `state/current/`
+
+The live working state. Running services read from and write to this directory.
+
+#### `state/current/files/`
+
+General-purpose file storage. Mounts declared with `source: state:<name>` bind into this area — user uploads, generated assets, local caches.
+
+#### `state/current/volumes/`
+
+Named volumes. Each subdirectory corresponds to a volume declared in `state.volumes`. Example: `volumes/dbdata/` holds the Postgres data directory.
+
+#### `state/current/runtime/`
+
+Runtime metadata managed by the supervisor — not user data.
+
+**`env.json`** — resolved environment variables per service (secrets excluded):
+
+```json
+{
+  "services": {
+    "web": { "NODE_ENV": "production" },
+    "db": { "POSTGRES_DB": "todo" }
+  }
+}
+```
+
+**`ports.json`** — current host-to-container port mappings:
+
+```json
+{
+  "mappings": [
+    { "service": "web", "containerPort": 3000, "hostPort": 49231, "protocol": "tcp" }
+  ]
+}
+```
+
+**`service-state.json`** — lifecycle state per service:
+
+```json
+{
+  "services": {
+    "web": { "status": "running", "containerId": "abc123", "startedAt": "2026-03-13T12:00:00Z", "restartCount": 0 }
+  }
+}
+```
+
+Valid status values: `stopped`, `starting`, `running`, `stopping`, `failed`
+
+### `state/snapshots/<timestamp>/`
+
+One directory per snapshot. Timestamp format: ISO 8601 with colons replaced by hyphens for filesystem safety (e.g., `2026-03-13T12-00-00Z`).
+
+- `files/` — copy of `current/files/` at snapshot time (or chunk references in chunked store)
+- `volumes/` — copy of `current/volumes/`. For `postgres` consistency: logical dump. For `sqlite`: checkpointed DB file.
+- `metadata.json` — snapshot metadata (see [Snapshot Protocol](/internals/snapshots))
+
+### `state/index.json`
+
+Top-level index tracking all snapshots. Updated atomically on every save or restore.
+
+```json
+{
+  "projectId": "uuid",
+  "appId": "com.example.todo",
+  "currentStateDigest": "sha256:...",
+  "snapshots": [...],
+  "retentionPolicy": { "maxSnapshots": 100 },
+  "lastModified": "2026-03-13T12:00:00Z"
+}
+```
+
+## Atomicity and safety
+
+- `index.json` is always updated atomically (write to temp file, fsync, rename)
+- A crash during snapshot save must never corrupt `current/`
+- A crash during snapshot save must leave the last good snapshot intact
+- Snapshot directories are immutable once written — never modified in place

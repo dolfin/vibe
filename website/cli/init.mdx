@@ -1,0 +1,42 @@
+---
+title: vibe init
+description: Initialize a new Vibe application project.
+---
+
+## Synopsis
+
+```
+vibe init <name>
+```
+
+## Description
+
+Creates a new directory `<name>/` containing a `vibe.yaml` template. The template is pre-filled with the app's name and a minimal single-service definition ready to edit.
+
+## Arguments
+
+| Argument | Description |
+|---|---|
+| `<name>` | Name of the app and the directory to create |
+
+## Options
+
+```
+-h, --help  Print help
+```
+
+## Examples
+
+```bash
+vibe init myapp
+cd myapp
+# edit vibe.yaml
+vibe validate vibe.yaml
+vibe package vibe.yaml -o myapp.vibeapp
+```
+
+## Notes
+
+- Creates `<name>/vibe.yaml` with `kind: vibe.app/v1` and a placeholder service
+- The generated `id` is derived from the name in reverse-domain format (`com.example.<name>`) — edit it to match your actual identifier
+- Nothing is fetched or compiled at init time

@@ -1,0 +1,86 @@
+---
+title: services
+description: Define the containers that make up your Vibe app.
+---
+
+## Service fields
+
+Each entry in the `services` array defines one container.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | **required** | Unique service name within the app |
+| `image` | string | **required** | OCI image reference (`registry/repo:tag` or digest) |
+| `command` | string[] | optional | Override container entrypoint |
+| `env` | map[string]string | optional | Environment variables |
+| `ports` | port[] | optional | Port exposure definitions |
+| `mounts` | mount[] | optional | Bind-style mounts from the state area |
+| `stateVolumes` | string[] | optional | Named volume mounts (`name:/path`) |
+| `dependsOn` | string[] | optional | Service names that must start before this service |
+
+## `ports[]`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `container` | int | **required** | Container port number (1–65535) |
+| `hostExposure` | enum | optional | `auto` — system assigns host port; `none` — no host exposure. Default: `auto` |
+
+## `mounts[]`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `source` | string | **required** | Format: `state:<volume-name>` for state-backed mounts |
+| `target` | string | **required** | Absolute path inside the container |
+
+## `stateVolumes`
+
+A shorthand for attaching named volumes. Each entry is `name:/path`:
+
+```yaml
+stateVolumes:
+  - dbdata:/var/lib/postgresql/data
+```
+
+The volume `dbdata` must have a matching entry in `state.volumes`.
+
+## Startup ordering
+
+Use `dependsOn` to declare startup order. The runtime starts services in topological order (dependency-first). Cycles are rejected at validation time.
+
+```yaml
+services:
+  - name: web
+    image: node:20-alpine
+    dependsOn: ["db", "cache"]
+  - name: db
+    image: postgres:16
+  - name: cache
+    image: redis:7-alpine
+```
+
+## Example
+
+```yaml
+services:
+  - name: web
+    image: ghcr.io/example/todo-web:1.0.0
+    command: ["node", "server.js"]
+    env:
+      NODE_ENV: production
+      DATABASE_URL: postgres://todo@db:5432/todo
+    ports:
+      - container: 3000
+        hostExposure: auto
+    mounts:
+      - source: state:uploads
+        target: /data/uploads
+    dependsOn: ["db"]
+
+  - name: db
+    image: postgres:16
+    env:
+      POSTGRES_DB: todo
+      POSTGRES_USER: todo
+    stateVolumes:
+      - dbdata:/var/lib/postgresql/data
+```

@@ -1,0 +1,56 @@
+---
+title: state
+description: Configure autosave, snapshot retention, and named volumes.
+---
+
+## Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `autosave` | bool | optional | Enable autosave snapshots. Default: `false` |
+| `autosaveDebounceSeconds` | int | optional | Minimum seconds between autosaves. Default: `30` |
+| `retention` | object | optional | Snapshot retention policy |
+| `retention.maxSnapshots` | int | optional | Maximum snapshots to retain. Default: `100` |
+| `volumes` | volume[] | optional | Volume definitions with consistency policies |
+
+## `volumes[]`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | **required** | Volume name, referenced by services |
+| `consistency` | enum | **required** | `sqlite`, `postgres`, or `generic` |
+
+### Consistency values
+
+| Value | Behavior |
+|---|---|
+| `sqlite` | WAL checkpoint (`PRAGMA wal_checkpoint(TRUNCATE)`) + fsync before snapshot |
+| `postgres` | Logical dump via `pg_dump` for portable, transaction-consistent snapshots |
+| `generic` | Best-effort copy — pause or stop the container, tar the directory, resume |
+
+Use the right consistency type for each database. Wrong consistency can produce corrupt snapshots.
+
+## Example
+
+```yaml
+state:
+  autosave: true
+  autosaveDebounceSeconds: 30
+  retention:
+    maxSnapshots: 100
+  volumes:
+    - name: dbdata
+      consistency: postgres
+    - name: uploads
+      consistency: generic
+    - name: app-db
+      consistency: sqlite
+```
+
+## How autosave works
+
+When `autosave: true`, the host app schedules a snapshot every `autosaveDebounceSeconds` seconds. Snapshots older than `maxSnapshots` are pruned automatically (oldest first). The current state is never deleted — only older snapshots are pruned.
+
+<Note>
+Snapshots are content-addressed and deduplicated — unchanged data between snapshots is stored only once. Disk usage grows proportional to actual data changes, not linearly with snapshot count.
+</Note>

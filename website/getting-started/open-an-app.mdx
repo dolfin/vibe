@@ -1,0 +1,49 @@
+---
+title: Open an App
+description: What happens when you open a .vibeapp file on macOS.
+---
+
+## Prerequisites
+
+- macOS 14 (Sonoma) or later
+- [Vibe for Mac](https://github.com/dolfin/vibe/releases) installed
+
+## Opening a .vibeapp
+
+Double-click any `.vibeapp` file in Finder. Vibe will:
+
+1. **Verify the signature** — check the Ed25519 signature against the package's file hashes
+2. **Show the trust state** — one of four states (see below)
+3. **Prompt for capabilities** — list the permissions the app requests (network, file import, etc.)
+4. **Start the VM** — boot the persistent Alpine Linux VM if not already running
+5. **Pull images and start services** — containers start in dependency order
+6. **Open the app window** — a WebView connected to the app's primary port
+
+## Trust States
+
+| State | Condition | What you see |
+|---|---|---|
+| **Signed + Trusted** | Valid signature from a publisher you trust | Green indicator; capabilities shown but not gated |
+| **Signed + Untrusted** | Valid signature, publisher not in your trust store | Yellow warning; option to trust publisher |
+| **Unsigned (Dev Mode)** | No signature — intended for local development | Orange warning; explicit acknowledgement required |
+| **Tampered** | Signature present but verification fails | Red block; app cannot be opened |
+
+## Capability Prompts
+
+Before an app runs for the first time, Vibe shows you the capabilities it requests:
+
+| Capability | What it means |
+|---|---|
+| **Network access** | App can make outbound internet requests |
+| **Host file import** | App can import files from your Mac |
+| **Port exposure** | App will listen on a local network port |
+
+You can accept all, reject individual capabilities, or cancel. Decisions are saved per project instance and can be changed in project settings.
+
+## Encrypted Packages
+
+If the package is password-protected, Vibe will prompt for the password before doing anything else. The package is decrypted in memory — the plaintext is never written to disk.
+
+## State Snapshots
+
+Vibe auto-saves the app's state every 30 seconds. Up to 100 snapshots are kept per app. You can also save manually or restore a previous snapshot from the project menu.
