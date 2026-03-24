@@ -47,5 +47,6 @@ fn main() -> anyhow::Result<()> {
         Commands::InstallHooks { tool, scope, force } => {
             commands::install_hooks::run(&tool, &scope, force)
         }
+        Commands::Licenses => commands::licenses::run(),
     }
 }

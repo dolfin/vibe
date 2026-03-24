@@ -1,0 +1,15 @@
+THIRD-PARTY NOTICES
+
+The vibe CLI incorporates the following open-source crates.
+Each section names the license, the crates it covers, and the full license text.
+
+{{#each licenses}}
+================================================================================
+License: {{{name}}}
+
+Used by:
+{{#each used_by}}  {{crate.name}} {{crate.version}}{{#if crate.repository}} — {{crate.repository}}{{/if}}
+{{/each}}
+--------------------------------------------------------------------------------
+{{{text}}}
+{{/each}}

@@ -3,6 +3,7 @@ pub mod init;
 pub mod inspect;
 pub mod install_hooks;
 pub mod keygen;
+pub mod licenses;
 pub mod package;
 pub mod revert;
 pub mod sign;

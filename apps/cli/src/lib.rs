@@ -102,6 +102,8 @@ pub enum Commands {
         #[arg(long)]
         force: bool,
     },
+    /// Print open-source licenses for all bundled dependencies
+    Licenses,
 }
 
 pub fn build_cli() -> clap::Command {

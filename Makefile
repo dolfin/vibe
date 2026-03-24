@@ -1,8 +1,10 @@
-.PHONY: bootstrap build test coverage coverage-html lint fmt clean bundle-vm demo-packages demo-verify release-cli release-app docs man install acknowledgments
+.PHONY: bootstrap build test coverage coverage-html lint fmt clean bundle-vm demo-packages demo-verify release-cli release-app docs man install acknowledgments notices
 
 bootstrap:
 	@echo "==> Installing Rust toolchain components..."
 	rustup component add clippy rustfmt
+	@echo "==> Installing cargo-about for license notices..."
+	cargo install cargo-about
 	@echo "==> Checking for Swift..."
 	@which swift > /dev/null 2>&1 || (echo "swift not found. Install Xcode Command Line Tools." && exit 1)
 	@echo "==> Bootstrap complete."
@@ -134,6 +136,12 @@ install: release-cli man
 	install -d /usr/local/share/man/man1
 	install -m 644 man/vibe.1 /usr/local/share/man/man1/vibe.1
 	@echo "==> vibe installed (binary + man page)"
+
+notices:
+	@echo "==> Generating apps/cli/NOTICES via cargo-about..."
+	@cargo about --version > /dev/null 2>&1 || (echo "cargo-about not found — run: make bootstrap" && exit 1)
+	cargo about generate about.hbs -o apps/cli/NOTICES 2>/dev/null
+	@echo "==> Commit apps/cli/NOTICES when deps change."
 
 acknowledgments:
 	@echo "==> Generating Acknowledgments.json from live package metadata..."
