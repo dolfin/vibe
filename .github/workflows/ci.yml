@@ -62,3 +62,64 @@ jobs:
 
       - name: Test
         run: swift test
+
+  bump-version:
+    name: Bump Version
+    needs: [rust, swift]
+    # Only runs on direct pushes to main, not on PRs.
+    # The commit this job creates carries [skip ci] so it doesn't re-trigger CI.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Use a PAT so the push can bypass branch protection if enabled.
+          # Falls back to GITHUB_TOKEN for repos without protection rules.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-bump-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-bump-
+
+      - name: Bump patch version
+        id: ver
+        run: |
+          # Read current version from [workspace.package] in Cargo.toml
+          OLD=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          MAJOR=$(echo "$OLD" | cut -d. -f1)
+          MINOR=$(echo "$OLD" | cut -d. -f2)
+          PATCH=$(echo "$OLD" | cut -d. -f3)
+          NEW="$MAJOR.$MINOR.$((PATCH + 1))"
+
+          # Update Cargo.toml
+          sed -i "s/^version = \"$OLD\"/version = \"$NEW\"/" Cargo.toml
+
+          # Sync Cargo.lock (no compilation — just resolves the workspace metadata)
+          cargo fetch --quiet
+
+          # Keep macOS app MARKETING_VERSION in sync
+          sed -i "s/MARKETING_VERSION = .*/MARKETING_VERSION = $NEW;/" \
+            apps/mac-host/VibeHost.xcodeproj/project.pbxproj
+
+          echo "old=$OLD" >> "$GITHUB_OUTPUT"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock apps/mac-host/VibeHost.xcodeproj/project.pbxproj
+          git commit -m "chore: bump version to ${{ steps.ver.outputs.new }} [skip ci]"
+          git push origin main
