@@ -328,6 +328,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "$(inherited) -fprofile-instr-generate";
 				PRODUCT_BUNDLE_IDENTIFIER = ninja.gil.VibeTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -348,6 +349,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "$(inherited) -fprofile-instr-generate";
 				PRODUCT_BUNDLE_IDENTIFIER = ninja.gil.VibeTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
