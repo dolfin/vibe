@@ -1,5 +1,5 @@
 {
-  "$schema": "https://mintlify.com/schema.json",
+  "$schema": "https://mintlify.com/docs.json",
   "name": "Vibe",
   "favicon": "/favicon.svg",
 "colors": { "primary": "#6366F1", "light": "#818CF8", "dark": "#4338CA" },
