@@ -2,8 +2,7 @@
   "$schema": "https://mintlify.com/schema.json",
   "name": "Vibe",
   "favicon": "/favicon.svg",
-  "docsDir": "website",
-  "colors": { "primary": "#6366F1", "light": "#818CF8", "dark": "#4338CA" },
+"colors": { "primary": "#6366F1", "light": "#818CF8", "dark": "#4338CA" },
   "topbarLinks": [{ "name": "GitHub", "url": "https://github.com/dolfin/vibe" }],
   "topbarCtaButton": { "name": "Download Vibe", "url": "https://github.com/dolfin/vibe/releases" },
   "navigation": [
