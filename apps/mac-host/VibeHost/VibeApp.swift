@@ -47,6 +47,7 @@ struct VibeApp: App {
             }
             DeveloperCommands()
             ViewCommands()
+            AcknowledgmentsCommands()
         }
 
         // Optional library (Window menu > Library)
@@ -60,6 +61,13 @@ struct VibeApp: App {
             )
         }
         .environment(vaultStore)
+
+        // Acknowledgments window (Help > Acknowledgments…)
+        Window("Acknowledgments", id: "acknowledgments") {
+            AcknowledgmentsView()
+        }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 700, height: 480)
 
         // Get Started window (File > New or ⌘N)
         Window("Get Started", id: "get-started") {
@@ -231,6 +239,20 @@ struct ViewCommands: Commands {
         CommandGroup(after: .toolbar) {
             Button(headerVisible ? "Hide Header" : "Show Header") {
                 headerVisible.toggle()
+            }
+        }
+    }
+}
+
+// MARK: - Acknowledgments Commands
+
+struct AcknowledgmentsCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(after: .help) {
+            Button("Acknowledgments…") {
+                openWindow(id: "acknowledgments")
             }
         }
     }
