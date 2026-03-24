@@ -29,7 +29,11 @@ let package = Package(
         ),
         .testTarget(
             name: "VibeHostTests",
-            dependencies: ["VibeHost"],
+            dependencies: [
+                "VibeHost",
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+                .product(name: "Argon2Swift", package: "Argon2Swift"),
+            ],
             path: "VibeHostTests"
         )
     ]
