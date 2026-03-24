@@ -1,0 +1,40 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="base" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14004F" />
+      <stop offset="100%" stop-color="#2B0A9A" />
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="50%" cy="38%" r="54%">
+      <stop offset="0%" stop-color="#8A36FF" stop-opacity="0.62" />
+      <stop offset="46%" stop-color="#6123E2" stop-opacity="0.24" />
+      <stop offset="100%" stop-color="#2B0A9A" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="blueGlow" cx="24%" cy="86%" r="42%">
+      <stop offset="0%" stop-color="#11D8FF" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#11D8FF" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="edgeGlow" cx="86%" cy="20%" r="36%">
+      <stop offset="0%" stop-color="#4A1CFF" stop-opacity="0.24" />
+      <stop offset="100%" stop-color="#4A1CFF" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="vignette" cx="50%" cy="50%" r="72%">
+      <stop offset="48%" stop-color="#070018" stop-opacity="0" />
+      <stop offset="100%" stop-color="#070018" stop-opacity="0.54" />
+    </radialGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#base)" />
+  <rect width="1024" height="1024" fill="url(#centerGlow)" />
+  <rect width="1024" height="1024" fill="url(#blueGlow)" />
+  <rect width="1024" height="1024" fill="url(#edgeGlow)" />
+  <rect width="1024" height="1024" fill="url(#vignette)" />
+
+  <image
+    x="68"
+    y="134"
+    width="900"
+    height="768"
+    href="magic_hat_macos_foreground.png"
+    preserveAspectRatio="xMidYMid meet"
+  />
+</svg>
