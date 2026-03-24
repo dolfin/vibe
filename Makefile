@@ -1,4 +1,4 @@
-.PHONY: bootstrap build test coverage coverage-html lint fmt clean bundle-vm demo-packages demo-verify release-cli release-app docs man install
+.PHONY: bootstrap build test coverage coverage-html lint fmt clean bundle-vm demo-packages demo-verify release-cli release-app docs man install acknowledgments
 
 bootstrap:
 	@echo "==> Installing Rust toolchain components..."
@@ -134,6 +134,12 @@ install: release-cli man
 	install -d /usr/local/share/man/man1
 	install -m 644 man/vibe.1 /usr/local/share/man/man1/vibe.1
 	@echo "==> vibe installed (binary + man page)"
+
+acknowledgments:
+	@echo "==> Generating Acknowledgments.json from live package metadata..."
+	@which python3 > /dev/null 2>&1 || (echo "python3 not found" && exit 1)
+	python3 scripts/generate-acknowledgments.py
+	@echo "==> Commit apps/mac-host/VibeHost/Resources/Acknowledgments.json when deps change."
 
 clean:
 	cargo clean
