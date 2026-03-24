@@ -12,7 +12,7 @@
 		8A58D7612F65C90E00CB8654 /* Virtualization.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A58D7622F65C90E00CB8654 /* Virtualization.framework */; };
 		8A58D7632F65C90E00CB8653 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AA000054AAAA000100000001 /* Sparkle */; };
 		8A58D7652F65C90E00CB8655 /* Argon2Swift in Frameworks */ = {isa = PBXBuildFile; productRef = AA000056AAAA000100000001 /* Argon2Swift */; };
-		8A58D7702F65C90E00CB8653 /* ZIPFoundation in Frameworks (Tests) */ = {isa = PBXBuildFile; productRef = AA000070AAAA000100000001 /* ZIPFoundation */; };
+		8A58D7702F65C90E00CB8653 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = AA000070AAAA000100000001 /* ZIPFoundation */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,7 +74,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8A58D7702F65C90E00CB8653 /* ZIPFoundation in Frameworks (Tests) */,
+				8A58D7702F65C90E00CB8653 /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -559,7 +559,7 @@
 			package = AA000066AAAA000100000001 /* XCRemoteSwiftPackageReference "Argon2Swift" */;
 			productName = Argon2Swift;
 		};
-		AA000070AAAA000100000001 /* ZIPFoundation (Tests) */ = {
+		AA000070AAAA000100000001 /* ZIPFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AA000060AAAA000100000001 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
 			productName = ZIPFoundation;
