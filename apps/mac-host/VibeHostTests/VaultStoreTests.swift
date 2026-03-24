@@ -6,6 +6,12 @@ final class VaultStoreTests: XCTestCase {
     private let entriesKey = "vibe.vault.entries"
     private let bindingsKey = "vibe.vault.bindings"
 
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.removeObject(forKey: entriesKey)
+        UserDefaults.standard.removeObject(forKey: bindingsKey)
+    }
+
     override func tearDown() {
         super.tearDown()
         UserDefaults.standard.removeObject(forKey: entriesKey)
