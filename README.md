@@ -5,6 +5,10 @@
 
 **Turn AI-built apps into files you can share and open anywhere.**
 
+<p align="center">
+  <img src="website/logo.png" alt="Vibe" width="200" />
+</p>
+
 Vibe lets you package an AI-built app into a single file and send it to anyone. They can open it with the Vibe player on their Mac and run it safely — no setup, no terminals, no dev stack required. Sharing software feels like sending a file, not deploying an app.
 
 ---
