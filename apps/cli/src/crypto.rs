@@ -93,7 +93,11 @@ pub fn encrypt_package(plaintext: &[u8], password: &[u8]) -> Result<(Vec<u8>, En
 }
 
 /// Decrypt raw ciphertext. Returns Err on wrong password or corruption.
-pub fn decrypt_package(ciphertext: &[u8], password: &[u8], meta: &EncryptionMetadata) -> Result<Vec<u8>> {
+pub fn decrypt_package(
+    ciphertext: &[u8],
+    password: &[u8],
+    meta: &EncryptionMetadata,
+) -> Result<Vec<u8>> {
     let key_bytes = derive_key(password, meta)?;
     let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
     let cipher = Aes256Gcm::new(key);
@@ -106,11 +110,16 @@ pub fn decrypt_package(ciphertext: &[u8], password: &[u8], meta: &EncryptionMeta
 }
 
 /// Build outer ZIP with _vibe_encryption.json + _vibe_encrypted_payload.
-pub fn write_encrypted_vibeapp(payload: &[u8], meta: &EncryptionMetadata, dest: &Path) -> Result<()> {
-    let meta_json = serde_json::to_string_pretty(meta).context("Failed to serialize encryption metadata")?;
+pub fn write_encrypted_vibeapp(
+    payload: &[u8],
+    meta: &EncryptionMetadata,
+    dest: &Path,
+) -> Result<()> {
+    let meta_json =
+        serde_json::to_string_pretty(meta).context("Failed to serialize encryption metadata")?;
 
-    let file = fs::File::create(dest)
-        .with_context(|| format!("Failed to create '{}'", dest.display()))?;
+    let file =
+        fs::File::create(dest).with_context(|| format!("Failed to create '{}'", dest.display()))?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
@@ -126,10 +135,10 @@ pub fn write_encrypted_vibeapp(payload: &[u8], meta: &EncryptionMetadata, dest: 
 
 /// Parse outer ZIP → (ciphertext, metadata).
 pub fn read_encrypted_vibeapp(path: &Path) -> Result<(Vec<u8>, EncryptionMetadata)> {
-    let data = fs::read(path)
-        .with_context(|| format!("Failed to read '{}'", path.display()))?;
+    let data = fs::read(path).with_context(|| format!("Failed to read '{}'", path.display()))?;
     let cursor = std::io::Cursor::new(&data);
-    let mut archive = zip::ZipArchive::new(cursor).context("Failed to open encrypted package as ZIP")?;
+    let mut archive =
+        zip::ZipArchive::new(cursor).context("Failed to open encrypted package as ZIP")?;
 
     let meta: EncryptionMetadata = {
         let mut file = archive
@@ -154,7 +163,9 @@ pub fn read_encrypted_vibeapp(path: &Path) -> Result<(Vec<u8>, EncryptionMetadat
 
 /// Returns true if ZIP contains _vibe_encryption.json.
 pub fn is_encrypted_package(path: &Path) -> bool {
-    let Ok(data) = fs::read(path) else { return false };
+    let Ok(data) = fs::read(path) else {
+        return false;
+    };
     let Ok(mut archive) = zip::ZipArchive::new(std::io::Cursor::new(data)) else {
         return false;
     };
@@ -386,19 +397,20 @@ mod tests {
 
     #[test]
     fn resolve_password_file_not_found_err() {
-        let result = resolve_password(
-            None,
-            Some(std::path::Path::new("/no/such/pw.txt")),
-            "",
-        );
+        let result = resolve_password(None, Some(std::path::Path::new("/no/such/pw.txt")), "");
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
-        assert!(msg.contains("password file") || msg.contains("Failed"), "got: {msg}");
+        assert!(
+            msg.contains("password file") || msg.contains("Failed"),
+            "got: {msg}"
+        );
     }
 
     #[test]
     fn is_encrypted_nonexistent_file() {
-        assert!(!is_encrypted_package(std::path::Path::new("/no/such/file.vibeapp")));
+        assert!(!is_encrypted_package(std::path::Path::new(
+            "/no/such/file.vibeapp"
+        )));
     }
 
     #[test]
@@ -426,7 +438,8 @@ mod tests {
         let path = dir.path().join("partial.vibeapp");
         // ZIP with only _vibe_encryption.json but no payload
         let json = r#"{"version":1,"cipher":"aes-256-gcm","kdf":"argon2id","kdf_params":{"m_cost":65536,"t_cost":3,"p_cost":4,"salt":"0000000000000000000000000000000000000000000000000000000000000000"},"nonce":"000000000000000000000000"}"#;
-        let zip_bytes = crate::test_helpers::make_zip(&[("_vibe_encryption.json", json.as_bytes())]);
+        let zip_bytes =
+            crate::test_helpers::make_zip(&[("_vibe_encryption.json", json.as_bytes())]);
         fs::write(&path, zip_bytes).unwrap();
         let result = read_encrypted_vibeapp(&path);
         assert!(result.is_err());
@@ -464,7 +477,8 @@ mod tests {
                 m_cost: 65536,
                 t_cost: 3,
                 p_cost: 4,
-                salt: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                salt: "0000000000000000000000000000000000000000000000000000000000000000"
+                    .to_string(),
             },
             nonce: "short".to_string(),
         };
@@ -484,13 +498,17 @@ mod tests {
                 m_cost: 0, // invalid
                 t_cost: 3,
                 p_cost: 4,
-                salt: "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                salt: "0000000000000000000000000000000000000000000000000000000000000000"
+                    .to_string(),
             },
             nonce: "000000000000000000000000".to_string(),
         };
         let result = derive_key(b"password", &meta);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
-        assert!(msg.contains("Argon2") || msg.contains("Invalid"), "got: {msg}");
+        assert!(
+            msg.contains("Argon2") || msg.contains("Invalid"),
+            "got: {msg}"
+        );
     }
 }

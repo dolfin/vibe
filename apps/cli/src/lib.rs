@@ -10,7 +10,11 @@ use std::path::PathBuf;
 use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "vibe", about = "Vibe Runtime packaging and development tool", version)]
+#[command(
+    name = "vibe",
+    about = "Vibe Runtime packaging and development tool",
+    version
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

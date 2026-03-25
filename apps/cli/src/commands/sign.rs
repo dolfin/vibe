@@ -112,8 +112,7 @@ pub fn run(
 
     // Write back: re-encrypt if original was encrypted, otherwise write plain
     if let Some(pw) = resolved_pw {
-        let (ciphertext, enc_meta) =
-            crate::crypto::encrypt_package(&new_zip_data, pw.as_bytes())?;
+        let (ciphertext, enc_meta) = crate::crypto::encrypt_package(&new_zip_data, pw.as_bytes())?;
         crate::crypto::write_encrypted_vibeapp(&ciphertext, &enc_meta, package_path)?;
     } else {
         fs::write(package_path, &new_zip_data).with_context(|| {
@@ -246,9 +245,7 @@ mod tests {
         let manifest = write_minimal_project(dir.path(), "testapp");
         let output = dir.path().join("out.vibeapp");
         build_package(&manifest, &output);
-        assert!(
-            super::run(&output, Path::new("/no/such/key.key"), None, None).is_err()
-        );
+        assert!(super::run(&output, Path::new("/no/such/key.key"), None, None).is_err());
     }
 
     #[test]
@@ -262,7 +259,10 @@ mod tests {
         let result = super::run(&output, &bad_key, None, None);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
-        assert!(msg.contains("expected 32 bytes") || msg.contains("32"), "got: {msg}");
+        assert!(
+            msg.contains("expected 32 bytes") || msg.contains("32"),
+            "got: {msg}"
+        );
     }
 
     #[test]

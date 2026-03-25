@@ -244,8 +244,7 @@ mod tests {
         let dir = tempdir().unwrap();
         run_in_dir(dir.path(), || {
             super::run("testapp").unwrap();
-            let content =
-                std::fs::read_to_string(dir.path().join("testapp/.vibeignore")).unwrap();
+            let content = std::fs::read_to_string(dir.path().join("testapp/.vibeignore")).unwrap();
             assert!(content.starts_with("# .vibeignore"), "got: {content}");
         });
     }
@@ -267,8 +266,7 @@ mod tests {
         let dir = tempdir().unwrap();
         run_in_dir(dir.path(), || {
             super::run("my-cool-app").unwrap();
-            let yaml =
-                std::fs::read_to_string(dir.path().join("my-cool-app/vibe.yaml")).unwrap();
+            let yaml = std::fs::read_to_string(dir.path().join("my-cool-app/vibe.yaml")).unwrap();
             assert!(yaml.contains("id: com.example.my.cool.app"), "got: {yaml}");
         });
     }

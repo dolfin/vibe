@@ -89,12 +89,18 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), Vec<ValidationError>
 
     if let Some(ref id) = manifest.id {
         if id.len() > MAX_ID_LEN {
-            errors.push(ValidationError::FieldTooLong { field: "id".into(), max: MAX_ID_LEN });
+            errors.push(ValidationError::FieldTooLong {
+                field: "id".into(),
+                max: MAX_ID_LEN,
+            });
         }
     }
     if let Some(ref name) = manifest.name {
         if name.len() > MAX_NAME_LEN {
-            errors.push(ValidationError::FieldTooLong { field: "name".into(), max: MAX_NAME_LEN });
+            errors.push(ValidationError::FieldTooLong {
+                field: "name".into(),
+                max: MAX_NAME_LEN,
+            });
         }
     }
 
@@ -112,7 +118,10 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), Vec<ValidationError>
 
     // Collection size limits
     if services.len() > MAX_SERVICES {
-        errors.push(ValidationError::TooMany { field: "services".into(), max: MAX_SERVICES });
+        errors.push(ValidationError::TooMany {
+            field: "services".into(),
+            max: MAX_SERVICES,
+        });
     }
 
     // Validate icon path
@@ -199,8 +208,11 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), Vec<ValidationError>
             }
             let env_key_valid = |k: &str| -> bool {
                 !k.is_empty()
-                    && k.chars().next().is_some_and(|c| c.is_ascii_uppercase() || c == '_')
-                    && k.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+                    && k.chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_uppercase() || c == '_')
+                    && k.chars()
+                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
             };
             for (key, value) in env {
                 if !env_key_valid(key) {

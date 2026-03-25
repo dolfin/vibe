@@ -61,9 +61,12 @@ pub fn run(
     // Determine project directory (parent of manifest file).
     // Canonicalize the manifest path first so that a bare filename like "vibe.yaml"
     // (whose .parent() is "" rather than ".") resolves correctly against cwd.
-    let manifest_path_abs = manifest_path
-        .canonicalize()
-        .with_context(|| format!("Failed to resolve manifest path '{}'", manifest_path.display()))?;
+    let manifest_path_abs = manifest_path.canonicalize().with_context(|| {
+        format!(
+            "Failed to resolve manifest path '{}'",
+            manifest_path.display()
+        )
+    })?;
     let project_dir = manifest_path_abs
         .parent()
         .unwrap_or(&manifest_path_abs)
@@ -94,12 +97,19 @@ pub fn run(
     // Embed seed data as _vibe_initial_state/<name>.tar.gz if provided.
     // These entries are included in the signed manifest so they cannot be tampered with.
     if let Some(seed_dir) = seed_data {
-        let seed_dir = seed_dir
-            .canonicalize()
-            .with_context(|| format!("Failed to resolve seed-data directory '{}'", seed_dir.display()))?;
+        let seed_dir = seed_dir.canonicalize().with_context(|| {
+            format!(
+                "Failed to resolve seed-data directory '{}'",
+                seed_dir.display()
+            )
+        })?;
 
-        let read_dir = fs::read_dir(&seed_dir)
-            .with_context(|| format!("Failed to read seed-data directory '{}'", seed_dir.display()))?;
+        let read_dir = fs::read_dir(&seed_dir).with_context(|| {
+            format!(
+                "Failed to read seed-data directory '{}'",
+                seed_dir.display()
+            )
+        })?;
 
         for entry in read_dir {
             let entry = entry?;
@@ -124,7 +134,8 @@ pub fn run(
                     "-czf",
                     "-",
                     "-C",
-                    path.to_str().context("Non-UTF-8 path in seed data directory")?,
+                    path.to_str()
+                        .context("Non-UTF-8 path in seed data directory")?,
                     ".",
                 ])
                 .output()
@@ -227,10 +238,7 @@ pub fn run(
 /// - `?` matches any single character.
 fn load_ignore_patterns(project_dir: &Path) -> Vec<String> {
     // Built-in defaults — always excluded regardless of .vibeignore content.
-    let mut patterns: Vec<String> = vec![
-        "node_modules".to_string(),
-        "target".to_string(),
-    ];
+    let mut patterns: Vec<String> = vec!["node_modules".to_string(), "target".to_string()];
 
     let ignore_file = project_dir.join(".vibeignore");
     if let Ok(contents) = fs::read_to_string(&ignore_file) {
@@ -527,8 +535,13 @@ mod tests {
     fn missing_manifest_returns_err() {
         let dir = tempdir().unwrap();
         let output = dir.path().join("out.vibeapp");
-        let result =
-            super::run(Path::new("/nonexistent/vibe.yaml"), Some(&output), None, None, None);
+        let result = super::run(
+            Path::new("/nonexistent/vibe.yaml"),
+            Some(&output),
+            None,
+            None,
+            None,
+        );
         assert!(result.is_err());
     }
 

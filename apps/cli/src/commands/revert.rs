@@ -7,15 +7,8 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 /// Strip `_vibe_state/*` entries from a .vibeapp, restoring it to its original signed state.
-pub fn run(
-    package: &Path,
-    password: Option<&str>,
-    password_file: Option<&Path>,
-) -> Result<()> {
-    println!(
-        "Reverting {}...",
-        package.display().to_string().cyan()
-    );
+pub fn run(package: &Path, password: Option<&str>, password_file: Option<&Path>) -> Result<()> {
+    println!("Reverting {}...", package.display().to_string().cyan());
 
     // Resolve password once upfront to avoid double-prompting
     let is_encrypted = crate::crypto::is_encrypted_package(package);
@@ -32,8 +25,7 @@ pub fn run(
     let data = crate::crypto::open_package(package, resolved_pw.as_deref(), None)?;
 
     let reader = std::io::Cursor::new(&data);
-    let mut archive =
-        zip::ZipArchive::new(reader).context("Failed to open ZIP archive")?;
+    let mut archive = zip::ZipArchive::new(reader).context("Failed to open ZIP archive")?;
 
     // Collect entry names first (borrow checker requires two passes)
     let names: Vec<String> = (0..archive.len())
@@ -58,7 +50,9 @@ pub fn run(
                 continue;
             }
 
-            let mut entry = archive.by_name(name).context("Failed to get archive entry")?;
+            let mut entry = archive
+                .by_name(name)
+                .context("Failed to get archive entry")?;
             let mut buf = Vec::new();
             entry
                 .read_to_end(&mut buf)
@@ -84,8 +78,13 @@ pub fn run(
             .with_context(|| format!("Failed to write temp file '{}'", tmp_path.display()))?;
     }
 
-    std::fs::rename(&tmp_path, package)
-        .with_context(|| format!("Failed to rename '{}' to '{}'", tmp_path.display(), package.display()))?;
+    std::fs::rename(&tmp_path, package).with_context(|| {
+        format!(
+            "Failed to rename '{}' to '{}'",
+            tmp_path.display(),
+            package.display()
+        )
+    })?;
 
     println!("{} Reverted!", "✓".green().bold());
     println!(
@@ -107,9 +106,7 @@ mod tests {
     use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
 
-    use crate::test_helpers::{
-        build_encrypted_package, make_zip, write_minimal_project,
-    };
+    use crate::test_helpers::{build_encrypted_package, make_zip, write_minimal_project};
 
     fn make_zip_with_state() -> Vec<u8> {
         crate::test_helpers::make_zip(&[
@@ -123,7 +120,10 @@ mod tests {
     fn no_state_entries_is_noop() {
         let dir = tempdir().unwrap();
         let output = dir.path().join("out.vibeapp");
-        let zip_bytes = make_zip(&[("index.html", b"hello"), ("_vibe_package_manifest.json", b"{}")]);
+        let zip_bytes = make_zip(&[
+            ("index.html", b"hello"),
+            ("_vibe_package_manifest.json", b"{}"),
+        ]);
         std::fs::write(&output, &zip_bytes).unwrap();
         assert!(super::run(&output, None, None).is_ok());
         assert!(output.exists());
@@ -172,15 +172,14 @@ mod tests {
 
         // Read inner ZIP, add state entry, re-encrypt
         let inner_with_state = {
-            let mut archive =
-                zip::ZipArchive::new(std::io::Cursor::new(&inner)).unwrap();
+            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&inner)).unwrap();
             let names: Vec<String> = (0..archive.len())
                 .map(|i| archive.by_index(i).unwrap().name().to_string())
                 .collect();
             let mut buf = Vec::new();
             let mut writer = ZipWriter::new(std::io::Cursor::new(&mut buf));
-            let opts = SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
+            let opts =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
             for name in &names {
                 let mut entry = archive.by_name(name).unwrap();
                 let mut contents = Vec::new();

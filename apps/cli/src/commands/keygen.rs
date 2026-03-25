@@ -49,7 +49,9 @@ pub fn run(output: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use tempfile::tempdir;
-    use vibe_signing::{sign_package, verifying_key_from_bytes, VerificationResult, verify_package};
+    use vibe_signing::{
+        sign_package, verify_package, verifying_key_from_bytes, VerificationResult,
+    };
 
     #[test]
     fn creates_key_and_pub_files() {
