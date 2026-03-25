@@ -5,7 +5,7 @@
   "favicon": "/favicon.svg",
 "colors": { "primary": "#6366F1", "light": "#818CF8", "dark": "#4338CA" },
   "navbar": {
-    "links": [{ "name": "GitHub", "url": "https://github.com/dolfin/vibe" }],
+    "links": [{ "type": "github", "href": "https://github.com/dolfin/vibe" }],
     "primary": { "type": "button", "label": "Download Vibe", "href": "https://github.com/dolfin/vibe/releases" }
   },
   "navigation": {
