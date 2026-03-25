@@ -3,6 +3,7 @@
   "name": "Vibe",
   "theme": "mint",
   "favicon": "/favicon.svg",
+  "logo": "/logo.png",
 "colors": { "primary": "#6366F1", "light": "#818CF8", "dark": "#4338CA" },
   "navbar": {
     "links": [{ "type": "github", "href": "https://github.com/dolfin/vibe" }],
