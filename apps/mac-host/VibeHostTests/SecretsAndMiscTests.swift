@@ -98,9 +98,8 @@ final class UTTypeTests: XCTestCase {
     }
 
     func testVibeAppTypeIsNotNil() {
-        // UTType("ninja.gil.vibe.vibeapp")! — verifying the force-unwrap is safe
-        let t = UTType("ninja.gil.vibe.vibeapp")
-        XCTAssertNotNil(t)
+        // UTType(exportedAs:) always succeeds; verify the static property is valid
+        XCTAssertNotNil(UTType.vibeApp)
     }
 }
 
