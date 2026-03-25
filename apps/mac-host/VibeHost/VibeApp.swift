@@ -168,6 +168,7 @@ private struct LibraryWindowRoot: View {
 // MARK: - VM Status Bar
 
 /// Persistent bottom status bar showing Vibe Runtime warm-up state.
+@MainActor
 private struct VMStatusBar: View {
     private var vmState: VMManager.State { VMManager.shared.state }
 
@@ -211,7 +212,7 @@ private struct VMStatusBar: View {
 }
 
 // Make URL conform to Identifiable for .sheet(item:)
-extension URL: @retroactive Identifiable {
+extension URL: Identifiable {
     public var id: String { absoluteString }
 }
 
