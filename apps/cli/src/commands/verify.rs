@@ -236,7 +236,8 @@ mod tests {
         // Re-build ZIP with tampered index.html
         let mut new_data = Vec::new();
         let mut writer = ZipWriter::new(std::io::Cursor::new(&mut new_data));
-        let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let opts =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         for name in &names {
             let mut entry = archive.by_name(name).unwrap();
             let mut contents = Vec::new();

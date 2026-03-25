@@ -55,7 +55,14 @@ pub fn run(tool: &Tool, scope: &Scope, force: bool) -> Result<()> {
 
     for (dest, content) in &targets {
         if dest.exists() && !force {
-            println!("{}", format!("! {} — already exists (use --force to overwrite)", dest.display()).yellow());
+            println!(
+                "{}",
+                format!(
+                    "! {} — already exists (use --force to overwrite)",
+                    dest.display()
+                )
+                .yellow()
+            );
             skipped += 1;
             continue;
         }

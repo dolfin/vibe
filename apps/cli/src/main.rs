@@ -1,5 +1,5 @@
 use clap::Parser;
-use vibe_cli::{Cli, Commands, commands};
+use vibe_cli::{commands, Cli, Commands};
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -26,13 +26,23 @@ fn main() -> anyhow::Result<()> {
             key,
             password,
             password_file,
-        } => commands::sign::run(&package, &key, password.as_deref(), password_file.as_deref()),
+        } => commands::sign::run(
+            &package,
+            &key,
+            password.as_deref(),
+            password_file.as_deref(),
+        ),
         Commands::Verify {
             package,
             key,
             password,
             password_file,
-        } => commands::verify::run(&package, &key, password.as_deref(), password_file.as_deref()),
+        } => commands::verify::run(
+            &package,
+            &key,
+            password.as_deref(),
+            password_file.as_deref(),
+        ),
         Commands::ImportCompose => commands::import_compose::run(),
         Commands::Inspect {
             package,

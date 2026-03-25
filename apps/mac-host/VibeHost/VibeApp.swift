@@ -4,7 +4,7 @@ import Darwin
 import Sparkle
 
 extension UTType {
-    static let vibeApp = UTType("ninja.gil.vibe.vibeapp")!
+    static let vibeApp = UTType(exportedAs: "ninja.gil.vibe.vibeapp")
 }
 
 
