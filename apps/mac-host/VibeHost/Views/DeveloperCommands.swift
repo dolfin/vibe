@@ -39,7 +39,9 @@ struct DeveloperCommands: Commands {
             Divider()
 
             Button("Open VM Console Log") {
-                NSWorkspace.shared.open(VMManager.shared.consoleLogURL)
+                Task { @MainActor in
+                    NSWorkspace.shared.open(VMManager.shared.consoleLogURL)
+                }
             }
         }
     }

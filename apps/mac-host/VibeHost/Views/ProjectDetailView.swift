@@ -4,6 +4,7 @@ import os
 private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "ProjectDetail")
 
 /// Detail view for a single project.
+@MainActor
 struct ProjectDetailView: View {
     let project: Project
     @Bindable var runtime: RuntimeState

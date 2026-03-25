@@ -199,7 +199,7 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), Vec<ValidationError>
             }
             let env_key_valid = |k: &str| -> bool {
                 !k.is_empty()
-                    && k.chars().next().map_or(false, |c| c.is_ascii_uppercase() || c == '_')
+                    && k.chars().next().is_some_and(|c| c.is_ascii_uppercase() || c == '_')
                     && k.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
             };
             for (key, value) in env {
