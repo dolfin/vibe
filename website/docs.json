@@ -4,70 +4,74 @@
   "theme": "mint",
   "favicon": "/favicon.svg",
 "colors": { "primary": "#6366F1", "light": "#818CF8", "dark": "#4338CA" },
-  "topbarLinks": [{ "name": "GitHub", "url": "https://github.com/dolfin/vibe" }],
-  "topbarCtaButton": { "name": "Download Vibe", "url": "https://github.com/dolfin/vibe/releases" },
-  "navigation": [
-    { "group": "Overview", "pages": ["introduction"] },
-    {
-      "group": "Getting Started",
-      "pages": [
-        "getting-started/quickstart",
-        "getting-started/open-an-app",
-        "getting-started/package-an-app"
-      ]
-    },
-    {
-      "group": "Manifest Reference",
-      "pages": [
-        "manifest/overview",
-        "manifest/top-level-fields",
-        "manifest/services",
-        "manifest/state",
-        "manifest/security",
-        "manifest/secrets",
-        "manifest/ui",
-        "manifest/publisher",
-        "manifest/validation-rules"
-      ]
-    },
-    {
-      "group": "CLI Reference",
-      "pages": [
-        "cli/overview",
-        "cli/init",
-        "cli/validate",
-        "cli/package",
-        "cli/sign",
-        "cli/verify",
-        "cli/keygen",
-        "cli/inspect",
-        "cli/revert",
-        "cli/import-compose",
-        "cli/install-hooks"
-      ]
-    },
-    {
-      "group": "Security",
-      "pages": [
-        "security/overview",
-        "security/trust-model",
-        "security/package-encryption",
-        "security/capability-prompts",
-        "security/runtime-hardening",
-        "security/secrets"
-      ]
-    },
-    {
-      "group": "Internals",
-      "pages": [
-        "internals/host-app",
-        "internals/vm-runtime",
-        "internals/rpc-api",
-        "internals/snapshots",
-        "internals/state-layout",
-        "internals/compose-compat"
-      ]
-    }
-  ],
+  "navbar": {
+    "links": [{ "name": "GitHub", "url": "https://github.com/dolfin/vibe" }],
+    "primary": { "type": "button", "label": "Download Vibe", "href": "https://github.com/dolfin/vibe/releases" }
+  },
+  "navigation": {
+    "groups": [
+      { "group": "Overview", "pages": ["introduction"] },
+      {
+        "group": "Getting Started",
+        "pages": [
+          "getting-started/quickstart",
+          "getting-started/open-an-app",
+          "getting-started/package-an-app"
+        ]
+      },
+      {
+        "group": "Manifest Reference",
+        "pages": [
+          "manifest/overview",
+          "manifest/top-level-fields",
+          "manifest/services",
+          "manifest/state",
+          "manifest/security",
+          "manifest/secrets",
+          "manifest/ui",
+          "manifest/publisher",
+          "manifest/validation-rules"
+        ]
+      },
+      {
+        "group": "CLI Reference",
+        "pages": [
+          "cli/overview",
+          "cli/init",
+          "cli/validate",
+          "cli/package",
+          "cli/sign",
+          "cli/verify",
+          "cli/keygen",
+          "cli/inspect",
+          "cli/revert",
+          "cli/import-compose",
+          "cli/install-hooks"
+        ]
+      },
+      {
+        "group": "Security",
+        "pages": [
+          "security/overview",
+          "security/trust-model",
+          "security/package-encryption",
+          "security/capability-prompts",
+          "security/runtime-hardening",
+          "security/secrets"
+        ]
+      },
+      {
+        "group": "Internals",
+        "pages": [
+          "internals/host-app",
+          "internals/vm-runtime",
+          "internals/rpc-api",
+          "internals/snapshots",
+          "internals/state-layout",
+          "internals/compose-compat"
+        ]
+      }
+    ]
+  },
   "footerSocials": { "github": "https://github.com/dolfin/vibe" }
 }
