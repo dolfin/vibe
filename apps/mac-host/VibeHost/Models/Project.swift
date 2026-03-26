@@ -14,7 +14,13 @@ struct Project: Identifiable, Codable, Equatable {
     let packageCachePath: String
 
     /// Original file path of the .vibeapp (outside sandbox, for supervisor).
-    let originalPackagePath: String?
+    var originalPackagePath: String?
+
+    /// True when this project is pinned to the Favorites section of the library.
+    var isFavorite: Bool
+
+    /// The last time this project was opened in a document window.
+    var lastOpenedAt: Date?
 
     /// Files from the package manifest (relative path → SHA-256 hex).
     let files: [String: String]
@@ -30,6 +36,7 @@ struct Project: Identifiable, Codable, Equatable {
         case id, appId, appName, appVersion, publisher, trustStatus
         case capabilities, packageHash, importedAt, packageCachePath
         case originalPackagePath, files, formatVersion, createdAt, isEncrypted
+        case isFavorite, lastOpenedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -49,6 +56,8 @@ struct Project: Identifiable, Codable, Equatable {
         formatVersion = try c.decode(String.self, forKey: .formatVersion)
         createdAt = try c.decode(String.self, forKey: .createdAt)
         isEncrypted = try c.decodeIfPresent(Bool.self, forKey: .isEncrypted) ?? false
+        isFavorite = try c.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        lastOpenedAt = try c.decodeIfPresent(Date.self, forKey: .lastOpenedAt)
     }
 
     // Memberwise initialiser (compiler won't synthesise one once init(from:) is defined).
@@ -67,7 +76,9 @@ struct Project: Identifiable, Codable, Equatable {
         files: [String: String],
         formatVersion: String,
         createdAt: String,
-        isEncrypted: Bool = false
+        isEncrypted: Bool = false,
+        isFavorite: Bool = false,
+        lastOpenedAt: Date? = nil
     ) {
         self.id = id
         self.appId = appId
@@ -84,5 +95,7 @@ struct Project: Identifiable, Codable, Equatable {
         self.formatVersion = formatVersion
         self.createdAt = createdAt
         self.isEncrypted = isEncrypted
+        self.isFavorite = isFavorite
+        self.lastOpenedAt = lastOpenedAt
     }
 }

@@ -17,10 +17,19 @@ final class ProjectStore {
 
     init() {
         load()
+        importDemoAppsIfNeeded()
     }
 
     func load() {
         projects = StorageManager.loadProjects()
+        // Migrate existing demo apps: ensure they are marked as favorites.
+        let demoIds: Set<String> = ["com.example.nodejs-todo", "com.example.sqlite-notes", "com.example.ws-chat"]
+        var didMigrate = false
+        for idx in projects.indices where demoIds.contains(projects[idx].appId) && !projects[idx].isFavorite {
+            projects[idx].isFavorite = true
+            didMigrate = true
+        }
+        if didMigrate { save() }
     }
 
     func save() {
@@ -40,6 +49,12 @@ final class ProjectStore {
 
         // Cache the package
         let cacheHash = try StorageManager.cachePackage(data: pkg.archiveData)
+
+        // Extract and cache the app icon, if the manifest specifies one
+        if let iconPath = pkg.appManifest.icon,
+           let iconData = try? PackageExtractor.extractFile(named: iconPath, from: pkg.archiveData) {
+            try? iconData.write(to: StorageManager.iconURL(for: cacheHash))
+        }
 
         // Compute package hash hex for display
         let archiveHash = SHA256.hash(data: pkg.archiveData)
@@ -68,6 +83,53 @@ final class ProjectStore {
         projects.append(project)
         save()
         return project
+    }
+
+    /// Auto-import bundled demo apps, replacing any existing entries with the same appId.
+    private func importDemoAppsIfNeeded() {
+        let key = "vibe.demosImported.v3"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        // Remove any existing demo entries so fresh imports take precedence in favorites.
+        let demoIds: Set<String> = ["com.example.nodejs-todo", "com.example.sqlite-notes", "com.example.ws-chat"]
+        projects.removeAll { demoIds.contains($0.appId) }
+        let demos = ["nodejs-todo", "sqlite-notes", "ws-chat"]
+        for name in demos {
+            guard let url = Bundle.main.url(forResource: name, withExtension: "vibeapp") else { continue }
+            try? importPackage(from: url)
+            // Mark the just-added demo project as a favorite.
+            if let idx = projects.firstIndex(where: { $0.originalPackagePath == url.path }) {
+                projects[idx].isFavorite = true
+            }
+        }
+        save()
+        UserDefaults.standard.set(true, forKey: key)
+    }
+
+    /// Called when any document window opens — adds the project to the library if missing,
+    /// and updates lastOpenedAt. fileURL is the file that was actually opened (may be cache).
+    func registerOpened(_ project: Project, fileURL: URL?) {
+        guard !project.packageCachePath.isEmpty else { return }
+        let isCached = fileURL.map { $0.path.hasPrefix(StorageManager.packageCacheDir.path) } ?? true
+        let originalPath: String? = isCached ? nil : fileURL?.path
+        if let idx = projects.firstIndex(where: { $0.packageCachePath == project.packageCachePath }) {
+            projects[idx].lastOpenedAt = Date()
+            if let p = originalPath {
+                projects[idx].originalPackagePath = p
+            }
+        } else {
+            var p = project
+            p.originalPackagePath = originalPath
+            p.isFavorite = false
+            p.lastOpenedAt = Date()
+            projects.append(p)
+        }
+        save()
+    }
+
+    func setFavorite(_ project: Project, to isFavorite: Bool) {
+        guard let idx = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        projects[idx].isFavorite = isFavorite
+        save()
     }
 
     /// Remove a project from the library.

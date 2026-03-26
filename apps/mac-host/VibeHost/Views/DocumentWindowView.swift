@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "DocumentWindow")
+private let logger = Logger(subsystem: "app.dotvibe.Vibe", category: "DocumentWindow")
 
 /// Per-document window: WebKit fills the window, auto-launches on open.
 /// An (i) toolbar button opens a sheet with all technical details.
@@ -10,6 +10,7 @@ struct DocumentWindowView: View {
     @Binding var document: VibeAppDocument
     let fileURL: URL?
     @Environment(VaultStore.self) private var vaultStore
+    @Environment(ProjectStore.self) private var projectStore
     @AppStorage("vibeHeaderVisible") private var headerVisible = true
     @State private var runtime = RuntimeState()
     @State private var isWebLoading = true
@@ -44,45 +45,48 @@ struct DocumentWindowView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     let ui = project.capabilities.browserUI
-                    if ui.showBackButton {
-                        Button {
-                            navControl.goBack?()
-                        } label: {
-                            Image(systemName: "chevron.backward")
+                    if headerVisible {
+                        if ui.showBackButton {
+                            Button {
+                                navControl.goBack?()
+                            } label: {
+                                Image(systemName: "chevron.backward")
+                            }
+                            .disabled(!canGoBack)
+                            .help("Back")
                         }
-                        .disabled(!canGoBack)
-                        .help("Back")
-                    }
-                    if ui.showForwardButton {
-                        Button {
-                            navControl.goForward?()
-                        } label: {
-                            Image(systemName: "chevron.forward")
+                        if ui.showForwardButton {
+                            Button {
+                                navControl.goForward?()
+                            } label: {
+                                Image(systemName: "chevron.forward")
+                            }
+                            .disabled(!canGoForward)
+                            .help("Forward")
                         }
-                        .disabled(!canGoForward)
-                        .help("Forward")
-                    }
-                    if ui.showReloadButton {
-                        Button {
-                            if isWebLoading { navControl.stopLoading?() } else { navControl.reload?() }
-                        } label: {
-                            Image(systemName: isWebLoading ? "xmark" : "arrow.clockwise")
+                        if ui.showReloadButton {
+                            Button {
+                                if isWebLoading { navControl.stopLoading?() } else { navControl.reload?() }
+                            } label: {
+                                Image(systemName: isWebLoading ? "xmark" : "arrow.clockwise")
+                            }
+                            .help(isWebLoading ? "Stop" : "Reload")
                         }
-                        .help(isWebLoading ? "Stop" : "Reload")
-                    }
-                    if ui.showHomeButton {
-                        Button {
-                            navControl.goHome?()
-                        } label: {
-                            Image(systemName: "house")
+                        if ui.showHomeButton {
+                            Button {
+                                navControl.goHome?()
+                            } label: {
+                                Image(systemName: "house")
+                            }
+                            .help("Home")
                         }
-                        .help("Home")
                     }
                     Button {
                         activeSheet = .info
                     } label: {
                         Image(systemName: "info.circle")
                     }
+                    .help("Get Info")
                 }
             }
             .sheet(item: $activeSheet) { sheet in
@@ -111,6 +115,7 @@ struct DocumentWindowView: View {
                 }
             }
             .task {
+                projectStore.registerOpened(project, fileURL: fileURL)
                 guard !project.packageCachePath.isEmpty else { return }
                 await runtime.checkRuntime()
                 await launchCurrentProject()
@@ -150,7 +155,8 @@ struct DocumentWindowView: View {
             .focusedSceneValue(\.vibeDocumentContext, VibeDocumentContext(
                 project: project,
                 fileURL: fileURL,
-                revert: { await revertAction() }
+                revert: { await revertAction() },
+                showInfo: { activeSheet = .info }
             ))
     }
 
@@ -377,9 +383,8 @@ struct DocumentWindowView: View {
 
     private var launchingOverlay: some View {
         VStack(spacing: 20) {
-            Image(systemName: "app.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(.blue)
+            AppIconView(project: project)
+                .frame(width: 80, height: 80)
 
             Text(project.appName)
                 .font(.title.weight(.semibold))
@@ -486,7 +491,9 @@ private struct ProjectInfoSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack {
+            HStack(spacing: 14) {
+                AppIconView(project: project)
+                    .frame(width: 52, height: 52)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(project.appName)
                         .font(.title3.weight(.semibold))
@@ -758,6 +765,7 @@ struct VibeDocumentContext {
     let project: Project
     let fileURL: URL?
     let revert: () async -> Void
+    let showInfo: () -> Void
 }
 
 struct VibeDocumentContextKey: FocusedValueKey {
@@ -844,7 +852,7 @@ private struct TrustWarningSheet: View {
 // MARK: - Notification names
 
 extension Notification.Name {
-    static let vibeNavigateHome = Notification.Name("ninja.gil.Vibe.navigateHome")
+    static let vibeNavigateHome = Notification.Name("app.dotvibe.Vibe.navigateHome")
 }
 
 // MARK: - Window configurator
@@ -866,7 +874,7 @@ private struct WindowConfigurator: NSViewRepresentable {
 
     private func apply(to window: NSWindow?) {
         guard let window else { return }
-        window.toolbar?.isVisible = headerVisible
+        window.toolbar?.isVisible = true  // always show toolbar so (i) is accessible
         window.tabbingMode = .preferred
     }
 }

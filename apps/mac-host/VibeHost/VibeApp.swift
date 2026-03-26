@@ -4,7 +4,7 @@ import Darwin
 import Sparkle
 
 extension UTType {
-    static let vibeApp = UTType(exportedAs: "ninja.gil.vibe.vibeapp")
+    static let vibeApp = UTType(exportedAs: "app.dotvibe.vibe.vibeapp")
 }
 
 
@@ -13,9 +13,6 @@ struct VibeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var projectStore = ProjectStore()
     @State private var vaultStore = VaultStore()
-    @State private var libraryRuntime = RuntimeState()
-    @State private var selectedProject: Project?
-    @State private var pendingPackageURL: URL?
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil
     )
@@ -35,8 +32,10 @@ struct VibeApp: App {
         // the Save action can update rawPackageData and macOS writes it to disk.
         DocumentGroup(newDocument: VibeAppDocument()) { file in
             DocumentWindowView(document: file.$document, fileURL: file.fileURL)
+                .background(LibraryOpener(appDelegate: appDelegate))
         }
         .environment(vaultStore)
+        .environment(projectStore)
         .commands {
             NewItemCommands()
             CommandGroup(after: .appInfo) {
@@ -46,21 +45,17 @@ struct VibeApp: App {
                 .disabled(!updaterController.updater.canCheckForUpdates)
             }
             DeveloperCommands()
+            GetInfoCommands()
             ViewCommands()
-            AcknowledgmentsCommands()
+            HelpCommands()
         }
 
         // Optional library (Window menu > Library)
         Window("Library", id: "library") {
-            LibraryWindowRoot(
-                projectStore: projectStore,
-                vaultStore: vaultStore,
-                libraryRuntime: libraryRuntime,
-                selectedProject: $selectedProject,
-                pendingPackageURL: $pendingPackageURL
-            )
+            LibraryWindowRoot(projectStore: projectStore)
         }
-        .environment(vaultStore)
+        .defaultSize(width: 400, height: 520)
+        .windowResizability(.contentMinSize)
 
         // Acknowledgments window (Help > Acknowledgments…)
         Window("Acknowledgments", id: "acknowledgments") {
@@ -68,6 +63,7 @@ struct VibeApp: App {
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 700, height: 480)
+        .commandsRemoved()
 
         // Get Started window (File > New or ⌘N)
         Window("Get Started", id: "get-started") {
@@ -75,6 +71,7 @@ struct VibeApp: App {
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 560, height: 480)
+        .commandsRemoved()
 
         // Secret Vault window (Window menu > Secret Vault, or ⌘⇧K)
         Window("Secret Vault", id: "vault") {
@@ -90,130 +87,65 @@ struct VibeApp: App {
 
 // MARK: - Library Window Root
 
-/// Wraps the library NavigationSplitView so it has access to SwiftUI environment actions.
 private struct LibraryWindowRoot: View {
     let projectStore: ProjectStore
-    let vaultStore: VaultStore
-    let libraryRuntime: RuntimeState
-    @Binding var selectedProject: Project?
-    @Binding var pendingPackageURL: URL?
 
-    @Environment(\.openWindow) private var openWindow
+    @State private var importError: String?
 
     var body: some View {
-        NavigationSplitView {
-            LibraryView(store: projectStore, selectedProject: $selectedProject)
-                .toolbar {
-                    ToolbarItem {
-                        Button {
-                            openFilePanel()
-                        } label: {
-                            Label("Open...", systemImage: "plus")
-                        }
-                    }
-                    ToolbarItem {
-                        Button {
-                            openWindow(id: "vault")
-                        } label: {
-                            Label("Secret Vault", systemImage: "key.horizontal.fill")
-                        }
-                        .help("Open Secret Vault (⌘⇧K)")
-                    }
+        LibraryView(store: projectStore)
+            .navigationTitle("Apps")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Browse…") { browseAndOpen() }
+                        .keyboardShortcut("o", modifiers: .command)
                 }
-        } detail: {
-            if let project = selectedProject {
-                ProjectDetailView(
-                    project: project,
-                    runtime: libraryRuntime,
-                    onRemove: {
-                        projectStore.removeProject(project)
-                        selectedProject = nil
-                    }
-                )
-            } else {
-                Text("Select a project")
-                    .foregroundStyle(.secondary)
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VMStatusBar()
-        }
-        .sheet(item: $pendingPackageURL) { url in
-            OpenPackageView(
-                packageURL: url,
-                store: projectStore,
-                onImported: { project in
-                    selectedProject = project
-                }
-            )
-        }
-        .task {
-            await libraryRuntime.checkRuntime()
-        }
+            .alert("Cannot Open App", isPresented: Binding(
+                get: { importError != nil },
+                set: { if !$0 { importError = nil } }
+            )) {
+                Button("OK") { importError = nil }
+            } message: {
+                Text(importError ?? "")
+            }
     }
 
-    private func openFilePanel() {
+    /// Shows an open panel, silently imports the package, then opens it as a document.
+    private func browseAndOpen() {
         let panel = NSOpenPanel()
+        // Prefer resolving via extension so the panel works even if the exported
+        // UTI hasn't propagated through lsd yet (e.g. after a bundle-ID change).
         panel.allowedContentTypes = [.vibeApp]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.message = "Select a .vibeapp package to open"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        if panel.runModal() == .OK, let url = panel.url {
-            pendingPackageURL = url
+        do {
+            try projectStore.importPackage(from: url)
+            // Open from the original URL — we have sandbox access via NSOpenPanel right now,
+            // and NSDocumentController will store a security-scoped bookmark for future sessions.
+            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
+        } catch {
+            importError = error.localizedDescription
         }
     }
 }
 
-// MARK: - VM Status Bar
+// MARK: - Library Opener (first-launch)
 
-/// Persistent bottom status bar showing Vibe Runtime warm-up state.
-@MainActor
-private struct VMStatusBar: View {
-    private var vmState: VMManager.State { VMManager.shared.state }
+/// Wires the openWindow action into AppDelegate so the library can be opened on first launch.
+/// Injected as a background on the DocumentGroup content view.
+private struct LibraryOpener: View {
+    let appDelegate: AppDelegate
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        switch vmState {
-        case .ready, .idle:
-            EmptyView()
-        case .booting:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Starting Vibe Runtime — launch will be available shortly…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        Color.clear
+            .onAppear {
+                appDelegate.requestLibraryOpen = { openWindow(id: "library") }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(.bar)
-            .overlay(alignment: .top) {
-                Divider()
-            }
-        case .stopping:
-            EmptyView()
-        case .failed(let msg):
-            HStack(spacing: 8) {
-                Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-                Text("Runtime failed: \(msg)")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(.bar)
-            .overlay(alignment: .top) {
-                Divider()
-            }
-        }
     }
-}
-
-// Make URL conform to Identifiable for .sheet(item:)
-extension URL: Identifiable {
-    public var id: String { absoluteString }
 }
 
 // MARK: - New Item Commands
@@ -227,6 +159,23 @@ struct NewItemCommands: Commands {
                 openWindow(id: "get-started")
             }
             .keyboardShortcut("n", modifiers: .command)
+        }
+    }
+}
+
+// MARK: - Get Info Command
+
+struct GetInfoCommands: Commands {
+    @FocusedValue(\.vibeDocumentContext) private var docContext
+
+    var body: some Commands {
+        CommandGroup(after: .saveItem) {
+            Divider()
+            Button("Get Info") {
+                docContext?.showInfo()
+            }
+            .keyboardShortcut("i", modifiers: .command)
+            .disabled(docContext == nil)
         }
     }
 }
@@ -245,13 +194,17 @@ struct ViewCommands: Commands {
     }
 }
 
-// MARK: - Acknowledgments Commands
+// MARK: - Help Commands
 
-struct AcknowledgmentsCommands: Commands {
+struct HelpCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
-        CommandGroup(after: .help) {
+        CommandGroup(replacing: .help) {
+            Button("Vibe Help") {
+                NSWorkspace.shared.open(URL(string: "https://docs.dotvibe.app")!)
+            }
+            Divider()
             Button("Acknowledgments…") {
                 openWindow(id: "acknowledgments")
             }
@@ -261,10 +214,20 @@ struct AcknowledgmentsCommands: Commands {
 
 // MARK: - App Delegate
 
-/// Manages the Developer menu's Option-key visibility.
+/// Manages the Developer menu's Option-key visibility and first-launch library opening.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var localMonitor: Any?
     private var globalMonitor: Any?
+
+    /// Set to true if the app was launched by opening a .vibeapp file.
+    private(set) var openedViaFile = false
+
+    /// Wired by LibraryOpener once a DocumentGroup window is in the hierarchy.
+    var requestLibraryOpen: (() -> Void)?
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        openedViaFile = true
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Defer until SwiftUI has finished populating NSApp.mainMenu.
@@ -272,6 +235,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.developerMenuItem?.isHidden = true
         }
         installMonitors()
+
+        // Open library on very first launch if not triggered by a file open.
+        DispatchQueue.main.async {
+            let seen = UserDefaults.standard.bool(forKey: "vibe.hasLaunchedBefore")
+            if !seen && !self.openedViaFile {
+                self.requestLibraryOpen?()
+            }
+            UserDefaults.standard.set(true, forKey: "vibe.hasLaunchedBefore")
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
