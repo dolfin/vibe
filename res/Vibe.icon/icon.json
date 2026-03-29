@@ -22,6 +22,10 @@
             {
               "appearance" : "dark",
               "value" : "automatic"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "automatic"
             }
           ],
           "glass-specializations" : [
@@ -34,14 +38,26 @@
             }
           ],
           "hidden" : false,
-          "image-name" : "logo-fg.png",
-          "name" : "logo-fg",
+          "image-name-specializations" : [
+            {
+              "value" : "logo-fg.png"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "logo-shadow.png"
+            }
+          ],
+          "name" : "logo",
           "opacity-specializations" : [
             {
               "value" : 1
             },
             {
               "appearance" : "dark",
+              "value" : 1
+            },
+            {
+              "appearance" : "tinted",
               "value" : 1
             }
           ],
@@ -54,6 +70,7 @@
           }
         }
       ],
+      "name" : "Foreground",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5
@@ -89,8 +106,8 @@
               "value" : true
             }
           ],
-          "image-name" : "vibe_background_1024_from_provided.png",
-          "name" : "vibe_background_1024_from_provided",
+          "image-name" : "vibe-bg-large.png",
+          "name" : "background",
           "position" : {
             "scale" : 1.15,
             "translation-in-points" : [
@@ -100,6 +117,7 @@
           }
         }
       ],
+      "name" : "Background",
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5

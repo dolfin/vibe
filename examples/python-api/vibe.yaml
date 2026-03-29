@@ -2,8 +2,6 @@ kind: vibe.app/v1
 id: com.example.python-api
 name: Python API
 version: "1.0.0"
-icon: assets/icon.png
-
 services:
   - name: api
     image: python:3.12-slim
