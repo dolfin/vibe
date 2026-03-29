@@ -1,16 +1,17 @@
 import SwiftUI
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "ProjectDetail")
+private let logger = Logger(subsystem: "app.dotvibe.Vibe", category: "ProjectDetail")
 
-/// Detail view for a single project.
+/// Consumer-friendly detail sheet for a single project.
 @MainActor
-struct ProjectDetailView: View {
+struct ProjectDetailSheet: View {
     let project: Project
     @Bindable var runtime: RuntimeState
     var onRemove: (() -> Void)? = nil
 
     @Environment(VaultStore.self) private var vaultStore
+    @Environment(\.dismiss) private var dismiss
 
     private enum ActiveSheet: Identifiable {
         case browser
@@ -30,22 +31,34 @@ struct ProjectDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                runtimeControls
-                trustSection
-                capabilitiesSection
-                if !project.capabilities.secrets.isEmpty {
-                    secretsSection
-                }
-                packageInfoSection
-                filesSection
-                removeSection
+        VStack(spacing: 0) {
+            // Sheet header
+            HStack {
+                Text(project.appName)
+                    .font(.headline)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.escape, modifiers: [])
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
+                    runtimeControls
+                    capabilitiesSection
+                    if !project.capabilities.secrets.isEmpty {
+                        secretsSection
+                    }
+                    removeSection
+                }
+                .padding(20)
+            }
         }
-        .navigationTitle(project.appName)
+        .frame(minWidth: 440, minHeight: 480)
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .browser:
@@ -71,21 +84,38 @@ struct ProjectDetailView: View {
         }
     }
 
+    // MARK: - Header
+
     private var header: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "app.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(.blue)
-            VStack(alignment: .leading) {
+        HStack(spacing: 14) {
+            AppIconView(project: project)
+                .frame(width: 64, height: 64)
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(project.appName)
                     .font(.title2.weight(.semibold))
-                Text("v\(project.appVersion)")
-                    .foregroundStyle(.secondary)
+
                 if let publisher = project.publisher {
                     Text(publisher)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 8) {
+                    Text("v\(project.appVersion)")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
+                    TrustBadge(status: project.trustStatus)
+                    if project.isEncrypted {
+                        Label("Encrypted", systemImage: "lock.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .padding(.top, 2)
+
+                Text("Added \(project.importedAt.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
         }
     }
@@ -232,7 +262,6 @@ struct ProjectDetailView: View {
         }
     }
 
-    /// Builds the secrets dict by checking vault bindings first, then legacy keychain.
     private func resolveSecrets() -> [String: String] {
         var secrets: [String: String] = [:]
         for name in project.capabilities.declaredSecrets {
@@ -254,22 +283,6 @@ struct ProjectDetailView: View {
                 activeSheet = .secrets(.manage)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var trustSection: some View {
-        GroupBox("Trust Status") {
-            HStack(spacing: 10) {
-                TrustBadge(status: project.trustStatus)
-                if project.isEncrypted {
-                    Divider().frame(height: 14)
-                    Label("Encrypted", systemImage: "lock.fill")
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline)
-                }
-                Spacer()
-            }
-            .padding(.vertical, 4)
         }
     }
 
@@ -305,61 +318,17 @@ struct ProjectDetailView: View {
         }
     }
 
-    private var packageInfoSection: some View {
-        GroupBox("Package Info") {
-            VStack(spacing: 6) {
-                infoRow("App ID", project.appId)
-                infoRow("Format Version", project.formatVersion)
-                infoRow("Created", project.createdAt)
-                infoRow("Package Hash", String(project.packageHash.prefix(16)) + "…")
-                infoRow("Imported", project.importedAt.formatted(date: .abbreviated, time: .shortened))
-            }
-            .padding(.vertical, 4)
-        }
-    }
-
-    private var filesSection: some View {
-        GroupBox("Files (\(project.files.count))") {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(project.files.keys.sorted(), id: \.self) { file in
-                    HStack {
-                        Image(systemName: "doc")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16)
-                        Text(file)
-                            .font(.system(.caption, design: .monospaced))
-                        Spacer()
-                        if let hash = project.files[file] {
-                            Text(String(hash.prefix(8)))
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-        }
-    }
-
     @ViewBuilder
     private var removeSection: some View {
         if let onRemove {
             HStack {
                 Spacer()
-                Button("Remove Project", role: .destructive) {
+                Button("Remove from Library", role: .destructive) {
                     onRemove()
                 }
+                .font(.subheadline)
             }
-        }
-    }
-
-    private func infoRow(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.system(.body, design: .monospaced))
+            .padding(.top, 8)
         }
     }
 }

@@ -22,12 +22,12 @@ struct DocumentWindowView: View {
     @State private var canGoBack = false
     @State private var canGoForward = false
     @State private var navControl = WebViewNavControl()
+    @State private var infoWindowController: NSWindowController?
 
     private enum ActiveSheet: Identifiable {
-        case info, secrets, trustWarning
+        case secrets, trustWarning
         var id: String {
             switch self {
-            case .info: "info"
             case .secrets: "secrets"
             case .trustWarning: "trustWarning"
             }
@@ -82,7 +82,7 @@ struct DocumentWindowView: View {
                         }
                     }
                     Button {
-                        activeSheet = .info
+                        openInfoWindow()
                     } label: {
                         Image(systemName: "info.circle")
                     }
@@ -91,15 +91,6 @@ struct DocumentWindowView: View {
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
-                case .info:
-                    ProjectInfoSheet(
-                        project: project,
-                        runtime: runtime,
-                        fileURL: fileURL,
-                        rawPackageSize: document.rawPackageData.count,
-                        schemeHandler: $schemeHandler,
-                        webViewID: $webViewID
-                    )
                 case .secrets:
                     SecretsEntryView(project: project, mode: .launch) { secrets in
                         Task { await doLaunch(secrets: secrets) }
@@ -141,7 +132,19 @@ struct DocumentWindowView: View {
                     await launchCurrentProject()
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .vibeExposeChanged)) { notif in
+                guard let projectId = notif.userInfo?["projectId"] as? UUID,
+                      projectId == project.id,
+                      let exposed = notif.userInfo?["exposed"] as? Bool else { return }
+                if exposed {
+                    schemeHandler = nil
+                } else if let ep = runtime.vmEndpoint(for: project) {
+                    schemeHandler = VibeSchemeHandler(vmIP: ep.vmIP, port: ep.hostPort)
+                }
+                webViewID = UUID()
+            }
             .onDisappear {
+                infoWindowController?.window?.close()
                 let task = pollingTask
                 pollingTask = nil
                 task?.cancel()
@@ -156,7 +159,7 @@ struct DocumentWindowView: View {
                 project: project,
                 fileURL: fileURL,
                 revert: { await revertAction() },
-                showInfo: { activeSheet = .info }
+                showInfo: { openInfoWindow() }
             ))
     }
 
@@ -196,6 +199,34 @@ struct DocumentWindowView: View {
                 webErrorOverlay(error)
             }
         }
+    }
+
+    // MARK: - Info Window
+
+    private func openInfoWindow() {
+        if let wc = infoWindowController, let win = wc.window, win.isVisible {
+            win.makeKeyAndOrderFront(nil)
+            return
+        }
+        let infoView = ProjectInfoView(
+            project: project,
+            runtime: runtime,
+            fileURL: fileURL,
+            rawPackageSize: document.rawPackageData.count
+        )
+        .environment(projectStore)
+        .environment(vaultStore)
+
+        let hosting = NSHostingController(rootView: infoView)
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "\(project.appName) Info"
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.setFrameAutosaveName("VibeInfo-\(project.id.uuidString)")
+        window.isReleasedWhenClosed = false
+        window.center()
+        let wc = NSWindowController(window: window)
+        wc.showWindow(nil)
+        infoWindowController = wc
     }
 
     // MARK: - Launch
@@ -469,19 +500,32 @@ struct DocumentWindowView: View {
 
 }
 
-// MARK: - Info Sheet
+// MARK: - Info Window
 
-private struct ProjectInfoSheet: View {
+private struct ProjectInfoView: View {
     let project: Project
     let runtime: RuntimeState
     let fileURL: URL?
-    /// Current in-memory package size (base + embedded state). Used for the Saved Data size row.
     let rawPackageSize: Int
-    @Binding var schemeHandler: VibeSchemeHandler?
-    @Binding var webViewID: UUID
-    @Environment(\.dismiss) private var dismiss
+    @Environment(ProjectStore.self) private var projectStore
 
     @State private var showManageSecrets = false
+    @State private var isFileLocked = false
+
+    private var currentProject: Project {
+        projectStore.projects.first(where: { $0.packageCachePath == project.packageCachePath }) ?? project
+    }
+
+    private var lockableURL: URL? {
+        if let path = currentProject.originalPackagePath,
+           !path.contains(Bundle.main.bundlePath),
+           !path.hasPrefix(StorageManager.packageCacheDir.path) {
+            return URL(fileURLWithPath: path)
+        }
+        guard let url = fileURL,
+              !url.path.hasPrefix(StorageManager.packageCacheDir.path) else { return nil }
+        return url
+    }
 
     private var status: ProjectRunStatus { runtime.status(for: project) }
     private var stateInfo: (totalBytes: Int, lastSaved: Date?) {
@@ -489,239 +533,266 @@ private struct ProjectInfoSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack(spacing: 14) {
-                AppIconView(project: project)
-                    .frame(width: 52, height: 52)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(project.appName)
-                        .font(.title3.weight(.semibold))
-                    Text("v\(project.appVersion)")
-                        .foregroundStyle(.secondary)
-                    if let publisher = project.publisher {
-                        Text(publisher)
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // App header
+                HStack(spacing: 14) {
+                    AppIconView(project: project)
+                        .frame(width: 52, height: 52)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(project.appName)
+                            .font(.title3.weight(.semibold))
+                        Text("v\(project.appVersion)")
+                            .foregroundStyle(.secondary)
+                        if let publisher = project.publisher {
+                            Text(publisher)
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    Spacer()
+                    HStack(spacing: 10) {
+                        Button {
+                            projectStore.setFavorite(currentProject, to: !currentProject.isFavorite)
+                        } label: {
+                            Image(systemName: currentProject.isFavorite ? "star.fill" : "star")
+                                .foregroundStyle(currentProject.isFavorite ? Color.yellow : Color.secondary)
+                                .font(.title3)
+                        }
+                        .buttonStyle(.plain)
+                        .help(currentProject.isFavorite ? "Remove from Favorites" : "Add to Favorites")
+
+                        if lockableURL != nil {
+                            Button { toggleFileLock() } label: {
+                                Image(systemName: isFileLocked ? "lock.fill" : "lock.open")
+                                    .foregroundStyle(isFileLocked ? Color.primary : Color.secondary)
+                                    .font(.title3)
+                            }
+                            .buttonStyle(.plain)
+                            .help(isFileLocked ? "Unlock File" : "Lock File")
+                        }
                     }
                 }
-                Spacer()
-                Button("Done") { dismiss() }
-                    .buttonStyle(.borderedProminent)
-            }
-            .padding()
+                .task {
+                    if let url = lockableURL,
+                       let vals = try? url.resourceValues(forKeys: [.isUserImmutableKey]) {
+                        isFileLocked = vals.isUserImmutable ?? false
+                    }
+                }
 
-            Divider()
+                // Runtime status
+                GroupBox("Runtime") {
+                    HStack {
+                        Circle()
+                            .fill(statusIndicatorColor)
+                            .frame(width: 10, height: 10)
+                        Text(statusLabel)
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .padding(.vertical, 4)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Runtime status
-                    GroupBox("Runtime") {
-                        HStack {
-                            Circle()
-                                .fill(statusIndicatorColor)
-                                .frame(width: 10, height: 10)
-                            Text(statusLabel)
-                                .font(.subheadline.weight(.medium))
+                    if let msg = runtime.statusMessage(for: project) {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text(msg)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
                         }
-                        .padding(.vertical, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
-                        if let msg = runtime.statusMessage(for: project) {
-                            HStack(spacing: 6) {
-                                ProgressView().controlSize(.mini)
-                                Text(msg)
+                    if status == .running {
+                        Divider()
+
+                        Toggle("Expose to machine", isOn: Binding(
+                            get: { runtime.isExposed(project) },
+                            set: { exposed in
+                                Task {
+                                    if exposed {
+                                        await runtime.exposeProject(project)
+                                    } else {
+                                        await runtime.unexposeProject(project)
+                                    }
+                                    NotificationCenter.default.post(
+                                        name: .vibeExposeChanged,
+                                        object: nil,
+                                        userInfo: ["projectId": project.id, "exposed": exposed]
+                                    )
+                                }
+                            }
+                        ))
+                        .padding(.top, 4)
+
+                        if runtime.isExposed(project), let port = runtime.exposedPort(for: project) {
+                            HStack {
+                                Text(verbatim: "http://127.0.0.1:\(port)")
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Copy") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString("http://127.0.0.1:\(port)", forType: .string)
+                                }
+                                .controlSize(.small)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 2)
                         }
+                    }
+                }
 
-                        if status == .running {
+                // Saved Data
+                GroupBox("Saved Data") {
+                    VStack(spacing: 6) {
+                        let info = stateInfo
+                        if rawPackageSize > 0 {
+                            infoRow("Size", formatBytes(rawPackageSize))
+                        }
+                        if info.lastSaved != nil {
+                            infoRow(
+                                "Last Saved",
+                                info.lastSaved.map {
+                                    $0.formatted(date: .abbreviated, time: .shortened)
+                                } ?? "—"
+                            )
+                        }
+                        if rawPackageSize == 0 && info.lastSaved == nil {
+                            Text("No saved data")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // Trust
+                GroupBox("Trust Status") {
+                    HStack(spacing: 10) {
+                        TrustBadge(status: project.trustStatus)
+                        if project.isEncrypted {
+                            Divider().frame(height: 14)
+                            Label("Encrypted", systemImage: "lock.fill")
+                                .foregroundStyle(.secondary)
+                                .font(.subheadline)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // Capabilities
+                GroupBox("Capabilities") {
+                    VStack(spacing: 6) {
+                        CapabilityRow(
+                            icon: "globe",
+                            label: "Network Access",
+                            value: project.capabilities.network ? "Yes" : "No"
+                        )
+                        CapabilityRow(
+                            icon: "folder",
+                            label: "Host File Import",
+                            value: project.capabilities.allowHostFileImport ? "Yes" : "No"
+                        )
+                        if !project.capabilities.exposedPorts.isEmpty {
+                            CapabilityRow(
+                                icon: "number.circle",
+                                label: "Exposed Ports",
+                                value: project.capabilities.exposedPorts.map(String.init).joined(separator: ", ")
+                            )
+                        }
+                        if !project.capabilities.requiredSecrets.isEmpty {
+                            CapabilityRow(
+                                icon: "key",
+                                label: "Required Secrets",
+                                value: project.capabilities.requiredSecrets.joined(separator: ", ")
+                            )
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // Secrets
+                if !project.capabilities.secrets.isEmpty {
+                    GroupBox("Secrets") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(project.capabilities.secrets, id: \.name) { secret in
+                                HStack {
+                                    Text(secret.name)
+                                        .font(.system(.callout, design: .monospaced))
+                                    Spacer()
+                                    let isSet = SecretsManager.load(
+                                        packageId: project.packageCachePath,
+                                        name: secret.name
+                                    ) != nil
+                                    Label(isSet ? "Set" : "Not set", systemImage: isSet ? "checkmark.circle.fill" : "exclamationmark.circle")
+                                        .font(.caption)
+                                        .foregroundStyle(isSet ? .green : .orange)
+                                }
+                            }
                             Divider()
-
-                            Toggle("Expose to machine", isOn: Binding(
-                                get: { runtime.isExposed(project) },
-                                set: { exposed in
-                                    Task {
-                                        if exposed {
-                                            await runtime.exposeProject(project)
-                                            schemeHandler = nil
-                                        } else {
-                                            await runtime.unexposeProject(project)
-                                            if let ep = runtime.vmEndpoint(for: project) {
-                                                schemeHandler = VibeSchemeHandler(
-                                                    vmIP: ep.vmIP,
-                                                    port: ep.hostPort
-                                                )
-                                            }
-                                        }
-                                        webViewID = UUID()
-                                    }
-                                }
-                            ))
-                            .padding(.top, 4)
-
-                            if runtime.isExposed(project), let port = runtime.exposedPort(for: project) {
-                                HStack {
-                                    Text(verbatim: "http://127.0.0.1:\(port)")
-                                        .font(.system(.caption, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Button("Copy") {
-                                        NSPasteboard.general.clearContents()
-                                        NSPasteboard.general.setString("http://127.0.0.1:\(port)", forType: .string)
-                                    }
-                                    .controlSize(.small)
-                                }
-                                .padding(.top, 2)
-                            }
-                        }
-                    }
-
-                    // Saved Data
-                    GroupBox("Saved Data") {
-                        VStack(spacing: 6) {
-                            let info = stateInfo
-                            if rawPackageSize > 0 {
-                                infoRow("Size", formatBytes(rawPackageSize))
-                            }
-                            if info.lastSaved != nil {
-                                infoRow(
-                                    "Last Saved",
-                                    info.lastSaved.map {
-                                        $0.formatted(date: .abbreviated, time: .shortened)
-                                    } ?? "—"
-                                )
-                            }
-                            if rawPackageSize == 0 && info.lastSaved == nil {
-                                Text("No saved data")
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-
-                    // Trust
-                    GroupBox("Trust Status") {
-                        HStack(spacing: 10) {
-                            TrustBadge(status: project.trustStatus)
-                            if project.isEncrypted {
-                                Divider().frame(height: 14)
-                                Label("Encrypted", systemImage: "lock.fill")
-                                    .foregroundStyle(.secondary)
-                                    .font(.subheadline)
-                            }
-                            Spacer()
-                        }
-                        .padding(.vertical, 4)
-                    }
-
-                    // Capabilities
-                    GroupBox("Capabilities") {
-                        VStack(spacing: 6) {
-                            CapabilityRow(
-                                icon: "globe",
-                                label: "Network Access",
-                                value: project.capabilities.network ? "Yes" : "No"
-                            )
-                            CapabilityRow(
-                                icon: "folder",
-                                label: "Host File Import",
-                                value: project.capabilities.allowHostFileImport ? "Yes" : "No"
-                            )
-                            if !project.capabilities.exposedPorts.isEmpty {
-                                CapabilityRow(
-                                    icon: "number.circle",
-                                    label: "Exposed Ports",
-                                    value: project.capabilities.exposedPorts.map(String.init).joined(separator: ", ")
-                                )
-                            }
-                            if !project.capabilities.requiredSecrets.isEmpty {
-                                CapabilityRow(
-                                    icon: "key",
-                                    label: "Required Secrets",
-                                    value: project.capabilities.requiredSecrets.joined(separator: ", ")
-                                )
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-
-                    // Secrets
-                    if !project.capabilities.secrets.isEmpty {
-                        GroupBox("Secrets") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                ForEach(project.capabilities.secrets, id: \.name) { secret in
-                                    HStack {
-                                        Text(secret.name)
-                                            .font(.system(.callout, design: .monospaced))
-                                        Spacer()
-                                        let isSet = SecretsManager.load(
-                                            packageId: project.packageCachePath,
-                                            name: secret.name
-                                        ) != nil
-                                        Label(isSet ? "Set" : "Not set", systemImage: isSet ? "checkmark.circle.fill" : "exclamationmark.circle")
-                                            .font(.caption)
-                                            .foregroundStyle(isSet ? .green : .orange)
-                                    }
-                                }
-                                Divider()
-                                Button("Manage Secrets…") { showManageSecrets = true }
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
-
-                    // Package info
-                    GroupBox("Package Info") {
-                        VStack(spacing: 6) {
-                            infoRow("App ID", project.appId)
-                            infoRow("Format Version", project.formatVersion)
-                            infoRow("Created", project.createdAt)
-                            infoRow("Package Hash", String(project.packageHash.prefix(16)) + "…")
-                            infoRow("Imported", project.importedAt.formatted(date: .abbreviated, time: .shortened))
-                        }
-                        .padding(.vertical, 4)
-                    }
-
-                    // Files
-                    GroupBox("Files (\(project.files.count))") {
-                        let sortedFiles = project.files.keys.sorted()
-                        let displayLimit = 200
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            ForEach(sortedFiles.prefix(displayLimit), id: \.self) { file in
-                                HStack {
-                                    Image(systemName: "doc")
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 16)
-                                    Text(file)
-                                        .font(.system(.caption, design: .monospaced))
-                                    Spacer()
-                                    if let hash = project.files[file] {
-                                        Text(String(hash.prefix(8)))
-                                            .font(.system(.caption2, design: .monospaced))
-                                            .foregroundStyle(.tertiary)
-                                    }
-                                }
-                            }
-                            if sortedFiles.count > displayLimit {
-                                Text("… and \(sortedFiles.count - displayLimit) more files")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
+                            Button("Manage Secrets…") { showManageSecrets = true }
                         }
                         .padding(.vertical, 4)
                     }
                 }
-                .padding()
+
+                // Package info
+                GroupBox("Package Info") {
+                    VStack(spacing: 6) {
+                        infoRow("App ID", project.appId)
+                        infoRow("Format Version", project.formatVersion)
+                        infoRow("Created", project.createdAt)
+                        infoRow("Package Hash", String(project.packageHash.prefix(16)) + "…")
+                        infoRow("Imported", project.importedAt.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // Files
+                GroupBox("Files (\(project.files.count))") {
+                    let sortedFiles = project.files.keys.sorted()
+                    let displayLimit = 200
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(sortedFiles.prefix(displayLimit), id: \.self) { file in
+                            HStack {
+                                Image(systemName: "doc")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 16)
+                                Text(file)
+                                    .font(.system(.caption, design: .monospaced))
+                                Spacer()
+                                if let hash = project.files[file] {
+                                    Text(String(hash.prefix(8)))
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                        }
+                        if sortedFiles.count > displayLimit {
+                            Text("… and \(sortedFiles.count - displayLimit) more files")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 2)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
             }
+            .padding()
         }
-        .frame(minWidth: 420, minHeight: 500)
+        .frame(minWidth: 420, minHeight: 400)
         .sheet(isPresented: $showManageSecrets) {
             SecretsEntryView(project: project, mode: .manage)
         }
+    }
+
+    private func toggleFileLock() {
+        guard var url = lockableURL else { return }
+        var vals = URLResourceValues()
+        vals.isUserImmutable = !isFileLocked
+        do {
+            try url.setResourceValues(vals)
+            isFileLocked.toggle()
+        } catch { }
     }
 
     private var statusIndicatorColor: Color {
@@ -853,6 +924,7 @@ private struct TrustWarningSheet: View {
 
 extension Notification.Name {
     static let vibeNavigateHome = Notification.Name("app.dotvibe.Vibe.navigateHome")
+    static let vibeExposeChanged = Notification.Name("app.dotvibe.Vibe.exposeChanged")
 }
 
 // MARK: - Window configurator
