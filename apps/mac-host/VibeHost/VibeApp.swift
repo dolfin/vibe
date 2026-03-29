@@ -171,8 +171,10 @@ struct GetInfoCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .saveItem) {
             Divider()
-            Button("Get Info") {
+            Button {
                 docContext?.showInfo()
+            } label: {
+                Label("Get Info", systemImage: "info.circle")
             }
             .keyboardShortcut("i", modifiers: .command)
             .disabled(docContext == nil)

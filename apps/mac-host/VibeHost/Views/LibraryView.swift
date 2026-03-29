@@ -106,6 +106,7 @@ private struct AppRow: View {
                         Image(systemName: "checkmark.seal.fill")
                             .font(.caption2)
                             .foregroundStyle(.blue)
+                            .help("Cryptographically verified")
                     }
                 }
 

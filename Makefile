@@ -1,4 +1,4 @@
-.PHONY: bootstrap build test coverage coverage-html lint fmt clean bundle-vm demo-packages demo-verify release-cli release-app docs man install acknowledgments notices
+.PHONY: bootstrap build test coverage coverage-html lint fmt clean bundle-vm demo-packages demo-verify bundle-demos release-cli release-app docs man install acknowledgments notices
 
 bootstrap:
 	@echo "==> Installing Rust toolchain components..."
@@ -86,6 +86,12 @@ demo-packages: build
 	@echo "==> Copying public key to mac-host resources..."
 	cp build/demo/demo-signing.pub apps/mac-host/VibeHost/Resources/demo-signing.pub
 	@echo "==> Demo packages ready in build/demo/"
+
+bundle-demos: demo-packages
+	@echo "==> Bundling demo apps into mac-host resources..."
+	cp build/demo/nodejs-todo.vibeapp build/demo/sqlite-notes.vibeapp build/demo/ws-chat.vibeapp \
+		apps/mac-host/VibeHost/Resources/
+	@echo "==> Demo apps bundled (nodejs-todo, sqlite-notes, ws-chat)"
 
 demo-verify: demo-packages
 	@echo "==> Verifying demo packages..."

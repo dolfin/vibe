@@ -118,6 +118,7 @@ struct VaultEntryEditView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .help("Remove tag")
                 }
             }
 
@@ -133,6 +134,7 @@ struct VaultEntryEditView: View {
                         .foregroundStyle(.blue)
                 }
                 .buttonStyle(.plain)
+                .help("Add tag")
                 .disabled(newTagText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }

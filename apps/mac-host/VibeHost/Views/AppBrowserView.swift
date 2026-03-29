@@ -56,11 +56,12 @@ struct AppBrowserView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .help("Close")
             .padding(.trailing, 6)
 
             // Navigation buttons (always visible in AppBrowserView)
-            navButton(systemImage: "chevron.backward", action: { navControl.goBack?() }, enabled: canGoBack)
-            navButton(systemImage: "chevron.forward", action: { navControl.goForward?() }, enabled: canGoForward)
+            navButton(systemImage: "chevron.backward", action: { navControl.goBack?() }, enabled: canGoBack, tooltip: "Back")
+            navButton(systemImage: "chevron.forward", action: { navControl.goForward?() }, enabled: canGoForward, tooltip: "Forward")
             reloadStopButton
 
             Spacer()
@@ -86,7 +87,7 @@ struct AppBrowserView: View {
         .background(.bar)
     }
 
-    private func navButton(systemImage: String, action: @escaping () -> Void, enabled: Bool) -> some View {
+    private func navButton(systemImage: String, action: @escaping () -> Void, enabled: Bool, tooltip: String) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 14, weight: .medium))
@@ -95,6 +96,7 @@ struct AppBrowserView: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
         .foregroundStyle(enabled ? .primary : .tertiary)
+        .help(tooltip)
     }
 
     private var reloadStopButton: some View {
@@ -107,6 +109,7 @@ struct AppBrowserView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
+        .help(isLoading ? "Stop" : "Reload")
     }
 
     private func errorState(_ message: String) -> some View {

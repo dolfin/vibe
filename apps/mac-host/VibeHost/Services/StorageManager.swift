@@ -3,7 +3,7 @@ import CryptoKit
 import ZIPFoundation
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "Storage")
+private let logger = Logger(subsystem: "app.dotvibe.Vibe", category: "Storage")
 
 /// Manages local storage for Vibe packages and project registry.
 enum StorageManager {
@@ -54,6 +54,14 @@ enum StorageManager {
         }
 
         return hashHex
+    }
+
+    /// Returns the URL of the cached icon PNG for a package, if one was extracted.
+    /// Path: `package-cache/<hash>/icon.png`
+    static func iconURL(for packageHash: String) -> URL {
+        packageCacheDir
+            .appendingPathComponent(packageHash)
+            .appendingPathComponent("icon.png")
     }
 
     /// Returns the directory where per-package user state tarballs are stored.
