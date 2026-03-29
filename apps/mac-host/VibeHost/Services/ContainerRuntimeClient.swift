@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "Container")
+private let logger = Logger(subsystem: "app.dotvibe.Vibe", category: "Container")
 
 // MARK: - Types
 
@@ -270,14 +270,23 @@ enum ContainerRuntimeClient {
         ] + args
 
         var lastResult: (stdout: String, stderr: String, status: Int32) = ("", "", -1)
+        var didClearKnownHosts = false
         for attempt in 1...5 {
             lastResult = try await runProcess("/usr/bin/ssh", args: sshArgs, timeout: timeout)
             // Exit code 255 = SSH transport error.
             if lastResult.status != 255 { return lastResult }
-            // Don't retry definitive security rejections — they won't self-heal.
-            let isHardFailure = lastResult.stderr.contains("REMOTE HOST IDENTIFICATION HAS CHANGED")
+            // Host key changed — clear known_hosts once and retry so accept-new can re-record
+            // the new key. This happens when the VM is rebuilt and gets a fresh SSH host key.
+            let isHostKeyChanged = lastResult.stderr.contains("REMOTE HOST IDENTIFICATION HAS CHANGED")
                 || lastResult.stderr.contains("Host key verification failed")
-                || lastResult.stderr.contains("Permission denied (")
+            if isHostKeyChanged && !didClearKnownHosts {
+                logger.warning("SSH host key mismatch — clearing known_hosts and retrying")
+                try? FileManager.default.removeItem(atPath: vibeSSHKnownHostsPath())
+                didClearKnownHosts = true
+                continue
+            }
+            // Don't retry other definitive security rejections — they won't self-heal.
+            let isHardFailure = isHostKeyChanged || lastResult.stderr.contains("Permission denied (")
             guard !isHardFailure && attempt < 5 else { return lastResult }
             // On macOS 26, ssh uses Network.framework and may emit
             // "nw_connection_copy_protocol_metadata_internal on unconnected nw_connection"
