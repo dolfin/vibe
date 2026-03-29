@@ -5,7 +5,7 @@ import Security
 /// Keys are scoped to `packageId` — the SHA-256 of the signed package manifest —
 /// which is stable across re-opens and version saves of the same .vibeapp file.
 enum SecretsManager {
-    static let service = "ninja.gil.Vibe.secrets"
+    static let service = "app.dotvibe.Vibe.secrets"
 
     enum KeychainError: Error {
         case unexpectedStatus(OSStatus)

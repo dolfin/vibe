@@ -106,7 +106,7 @@ struct GetStartedView: View {
 
     private func openVibeApp() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType("ninja.gil.vibe.vibeapp")!]
+        panel.allowedContentTypes = [UTType("app.dotvibe.vibe.vibeapp")!]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.message = "Select a .vibeapp package to open"

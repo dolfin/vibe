@@ -2,7 +2,7 @@ import Foundation
 import Virtualization
 import os
 
-private let logger = Logger(subsystem: "ninja.gil.Vibe", category: "VM")
+private let logger = Logger(subsystem: "app.dotvibe.Vibe", category: "VM")
 
 let vmSSHPort: UInt16 = 2222
 let vmSSHUser = "root"

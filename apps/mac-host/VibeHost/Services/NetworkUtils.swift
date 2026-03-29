@@ -9,7 +9,7 @@ func tcpPortOpen(host: String, port: UInt16) async -> Bool {
             return
         }
         let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
-        let q = DispatchQueue(label: "ninja.gil.Vibe.tcpProbe.\(port)")
+        let q = DispatchQueue(label: "app.dotvibe.Vibe.tcpProbe.\(port)")
         var done = false
 
         @Sendable func finish(_ result: Bool) {

@@ -15,7 +15,7 @@ final class SecretsManagerTests: XCTestCase {
     }
 
     func testServiceIdentifier() {
-        XCTAssertEqual(SecretsManager.service, "ninja.gil.Vibe.secrets")
+        XCTAssertEqual(SecretsManager.service, "app.dotvibe.Vibe.secrets")
     }
 
     func testSaveAndLoadRoundTrip() throws {
@@ -94,7 +94,7 @@ final class SecretsManagerTests: XCTestCase {
 final class UTTypeTests: XCTestCase {
 
     func testVibeAppTypeIdentifier() {
-        XCTAssertEqual(UTType.vibeApp.identifier, "ninja.gil.vibe.vibeapp")
+        XCTAssertEqual(UTType.vibeApp.identifier, "app.dotvibe.vibe.vibeapp")
     }
 
     func testVibeAppTypeIsNotNil() {

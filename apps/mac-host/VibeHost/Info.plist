@@ -5,31 +5,29 @@
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>ninja.gil.vibe.vibeapp</string>
-			</array>
-			<key>LSHandlerRank</key>
-			<string>Owner</string>
-			<key>CFBundleTypeName</key>
-			<string>Vibe Application Package</string>
 			<key>CFBundleTypeIconFile</key>
 			<string>VibeAppDocument</string>
+			<key>CFBundleTypeName</key>
+			<string>Vibe Application Package</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>app.dotvibe.vibe.vibeapp</string>
+			</array>
 		</dict>
 	</array>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://dolfin.github.io/vibe/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>IziMlGkYTpxirsLJHSjmTwpoSxPQHzEkEs5XxmP8tf8=</string>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>ninja.gil.vibe.vibeapp</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
@@ -41,6 +39,8 @@
 			<array>
 				<string>VibeAppDocument</string>
 			</array>
+			<key>UTTypeIdentifier</key>
+			<string>app.dotvibe.vibe.vibeapp</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
