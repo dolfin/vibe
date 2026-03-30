@@ -1,10 +1,14 @@
 import SwiftUI
 import AppKit
+import os
+
+private let logger = Logger(subsystem: "app.dotvibe.Vibe", category: "Library")
 
 // MARK: - LibraryView
 
 struct LibraryView: View {
     @Bindable var store: ProjectStore
+    @State private var showClearRecentsConfirmation = false
 
     private var favorites: [Project] {
         store.projects
@@ -32,7 +36,16 @@ struct LibraryView: View {
                 Section {
                     ForEach(recentProjects) { AppRow(project: $0, showPath: true, store: store) }
                 } header: {
-                    SectionHeader("Recently Opened")
+                    HStack(alignment: .firstTextBaseline) {
+                        SectionHeader("Recently Opened")
+                        Spacer()
+                        Button("Clear") { showClearRecentsConfirmation = true }
+                            .font(.system(.caption, design: .default, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .buttonStyle(.plain)
+                            .padding(.top, 12)
+                            .padding(.bottom, 2)
+                    }
                 }
             }
 
@@ -58,6 +71,12 @@ struct LibraryView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .frame(minWidth: 320, minHeight: 400)
+        .confirmationDialog("Clear Recently Opened", isPresented: $showClearRecentsConfirmation) {
+            Button("Clear All", role: .destructive) { store.clearRecentProjects() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Remove all recently opened apps from the library? This cannot be undone.")
+        }
     }
 }
 
@@ -85,6 +104,8 @@ private struct AppRow: View {
     var store: ProjectStore
 
     @State private var isHovered = false
+    @State private var showMissingFileAlert = false
+    @State private var openErrorMessage: String?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -130,6 +151,21 @@ private struct AppRow: View {
         )
         .listRowSeparator(.hidden)
         .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+        .alert("File Not Found", isPresented: $showMissingFileAlert) {
+            Button("Remove from Library", role: .destructive) { store.removeProject(project) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            let name = project.originalPackagePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? project.appName
+            Text("\"\(name)\" could not be found at its original location. It may have been moved or deleted.")
+        }
+        .alert("Could Not Open App", isPresented: Binding(
+            get: { openErrorMessage != nil },
+            set: { if !$0 { openErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(openErrorMessage ?? "")
+        }
         .contextMenu {
             if project.isFavorite {
                 Button("Remove from Favorites") {
@@ -148,21 +184,82 @@ private struct AppRow: View {
     }
 
     private func openProject(_ project: Project) {
-        let cacheURL = StorageManager.packageCacheDir
-            .appendingPathComponent(project.packageCachePath)
-            .appendingPathComponent("package.vibeapp")
+        let isBundled = project.originalPackagePath.map {
+            $0.contains(Bundle.main.bundlePath)
+        } ?? true
 
-        if let originalPath = project.originalPackagePath,
-           !originalPath.contains(Bundle.main.bundlePath) {
-            let originalURL = URL(fileURLWithPath: originalPath)
-            NSDocumentController.shared.openDocument(withContentsOf: originalURL, display: true) { _, _, error in
-                guard error != nil else { return }
-                DispatchQueue.main.async {
-                    NSDocumentController.shared.openDocument(withContentsOf: cacheURL, display: true) { _, _, _ in }
-                }
+        let targetURL: URL
+
+        if isBundled {
+            // Bundled apps live inside the app bundle — open from cache.
+            // Prefer the original filename; fall back to legacy "package.vibeapp" for older entries.
+            let filename = project.originalPackagePath.map {
+                URL(fileURLWithPath: $0).lastPathComponent
+            } ?? "package.vibeapp"
+            let cacheDir = StorageManager.packageCacheDir.appendingPathComponent(project.packageCachePath)
+            let preferredURL = cacheDir.appendingPathComponent(filename)
+            let legacyURL = cacheDir.appendingPathComponent("package.vibeapp")
+            let fm = FileManager.default
+            if fm.fileExists(atPath: preferredURL.path) {
+                targetURL = preferredURL
+            } else if fm.fileExists(atPath: legacyURL.path) {
+                targetURL = legacyURL
+            } else {
+                logger.error("Cache file missing for \(project.appName): \(preferredURL.path)")
+                showMissingFileAlert = true
+                return
             }
         } else {
-            NSDocumentController.shared.openDocument(withContentsOf: cacheURL, display: true) { _, _, _ in }
+            // Non-bundled apps: open from their original location on disk.
+            // Resolve a security-scoped bookmark if one exists — this survives sandbox restarts
+            // and delete/restore cycles, which change the file's inode and break the implicit
+            // "user selected this file" sandbox grant.
+            guard let originalPath = project.originalPackagePath else { return }
+
+            var bookmarkedURL: URL?
+            if let bookmarkData = StorageManager.loadBookmark(forProjectId: project.id.uuidString) {
+                var isStale = false
+                bookmarkedURL = try? URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                )
+                // Refresh a stale bookmark so the next open works without re-selection.
+                if isStale, let fresh = bookmarkedURL,
+                   let newData = try? fresh.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                    StorageManager.saveBookmark(newData, forProjectId: project.id.uuidString)
+                }
+            }
+
+            let openURL = bookmarkedURL ?? URL(fileURLWithPath: originalPath)
+
+            guard FileManager.default.fileExists(atPath: openURL.path) else {
+                logger.error("Original file missing for \(project.appName): \(openURL.path)")
+                showMissingFileAlert = true
+                return
+            }
+
+            targetURL = openURL
+            if let url = bookmarkedURL { _ = url.startAccessingSecurityScopedResource() }
+
+            logger.info("Opening \(project.appName) from \(targetURL.path)")
+            NSDocumentController.shared.openDocument(withContentsOf: targetURL, display: true) { _, _, error in
+                bookmarkedURL?.stopAccessingSecurityScopedResource()
+                if let error {
+                    logger.error("Failed to open \(project.appName): \(error.localizedDescription)")
+                    self.openErrorMessage = error.localizedDescription
+                }
+            }
+            return
+        }
+
+        logger.info("Opening \(project.appName) from \(targetURL.path)")
+        NSDocumentController.shared.openDocument(withContentsOf: targetURL, display: true) { _, _, error in
+            if let error {
+                logger.error("Failed to open \(project.appName): \(error.localizedDescription)")
+                self.openErrorMessage = error.localizedDescription
+            }
         }
     }
 }

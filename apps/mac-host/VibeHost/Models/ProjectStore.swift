@@ -46,8 +46,8 @@ final class ProjectStore {
         // Verify trust using the embedded key (TOFU) or the bundled Vibe root key as fallback.
         let trustResult = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: vibeOfficialPublicKey)
 
-        // Cache the package
-        let cacheHash = try StorageManager.cachePackage(data: pkg.archiveData)
+        // Cache the package, preserving the original filename (important for bundled apps)
+        let cacheHash = try StorageManager.cachePackage(data: pkg.archiveData, filename: url.lastPathComponent)
 
         // Extract and cache the app icon, if the manifest specifies one
         if let iconPath = pkg.appManifest.icon,
@@ -79,6 +79,16 @@ final class ProjectStore {
             createdAt: pkg.packageManifest.createdAt,
             publisherKeyFingerprint: trustResult.keyFingerprint
         )
+
+        // Store a security-scoped bookmark so the file remains accessible after
+        // sandbox restarts and delete/restore cycles (which change the file inode).
+        if let bookmarkData = try? url.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) {
+            StorageManager.saveBookmark(bookmarkData, forProjectId: project.id.uuidString)
+        }
 
         projects.append(project)
         save()
@@ -135,7 +145,7 @@ final class ProjectStore {
             // existing file may carry a stale signature (same manifest hash, new key).
             var archivePath = StorageManager.packageCacheDir
                 .appendingPathComponent(projects[idx].packageCachePath, isDirectory: true)
-                .appendingPathComponent("package.vibeapp")
+                .appendingPathComponent(url.lastPathComponent)
             var unlock = URLResourceValues(); unlock.isUserImmutable = false
             try? archivePath.setResourceValues(unlock)
             try? data.write(to: archivePath)
@@ -159,12 +169,21 @@ final class ProjectStore {
             if let p = originalPath {
                 projects[idx].originalPackagePath = p
             }
+            // Refresh the security-scoped bookmark whenever the file is opened from disk.
+            if !isCached, let url = fileURL,
+               let bookmarkData = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                StorageManager.saveBookmark(bookmarkData, forProjectId: projects[idx].id.uuidString)
+            }
         } else {
             var p = project
             p.originalPackagePath = originalPath
             p.isFavorite = false
             p.lastOpenedAt = Date()
             projects.append(p)
+            if !isCached, let url = fileURL,
+               let bookmarkData = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) {
+                StorageManager.saveBookmark(bookmarkData, forProjectId: p.id.uuidString)
+            }
         }
         save()
     }
@@ -180,11 +199,24 @@ final class ProjectStore {
         projects.removeAll { $0.id == project.id }
         save()
 
-        // Clean up Keychain secrets
+        StorageManager.deleteBookmark(forProjectId: project.id.uuidString)
         SecretsManager.deleteAll(for: project.packageCachePath, names: project.capabilities.declaredSecrets)
 
         // Clean up cache if no other project references it
         let cachePath = StorageManager.packageCacheDir.appendingPathComponent(project.packageCachePath)
         try? FileManager.default.removeItem(at: cachePath)
+    }
+
+    /// Remove all non-favourite projects from the library (clears the Recently Opened list).
+    func clearRecentProjects() {
+        let toRemove = projects.filter { !$0.isFavorite }
+        projects.removeAll { !$0.isFavorite }
+        save()
+        for project in toRemove {
+            StorageManager.deleteBookmark(forProjectId: project.id.uuidString)
+            SecretsManager.deleteAll(for: project.packageCachePath, names: project.capabilities.declaredSecrets)
+            let cachePath = StorageManager.packageCacheDir.appendingPathComponent(project.packageCachePath)
+            try? FileManager.default.removeItem(at: cachePath)
+        }
     }
 }

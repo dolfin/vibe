@@ -34,7 +34,7 @@ enum StorageManager {
     /// The cached archive is the state-stripped version used as base in `rebuildWithState`.
     ///
     /// Returns the cache key (hash hex) used to look up the package later.
-    static func cachePackage(data: Data) throws -> String {
+    static func cachePackage(data: Data, filename: String = "package.vibeapp") throws -> String {
         ensureDirectories()
 
         // Derive hash from the signed _vibe_package_manifest.json — stable across saves.
@@ -42,7 +42,7 @@ enum StorageManager {
         let hash = SHA256.hash(data: hashInput)
         let hashHex = hash.map { String(format: "%02x", $0) }.joined()
         let cacheDir = packageCacheDir.appendingPathComponent(hashHex, isDirectory: true)
-        let archivePath = cacheDir.appendingPathComponent("package.vibeapp")
+        let archivePath = cacheDir.appendingPathComponent(filename)
 
         let fm = FileManager.default
         if !fm.fileExists(atPath: archivePath.path) {
@@ -156,6 +156,46 @@ enum StorageManager {
             }
         }
         return (total, latest)
+    }
+
+    // MARK: - Security-scoped bookmarks
+    //
+    // Bookmarks let the app re-open user-selected files across launches and after
+    // the file is deleted and restored (which changes its inode, invalidating the
+    // sandbox's implicit "user selected this file" access grant).
+    // The `user-selected.read-write` entitlement is sufficient to create and resolve
+    // these bookmarks — no additional bookmark entitlement is required.
+
+    private static var bookmarksFileURL: URL {
+        appSupportDir.appendingPathComponent("bookmarks.plist")
+    }
+
+    static func saveBookmark(_ data: Data, forProjectId id: String) {
+        var dict = loadAllBookmarks()
+        dict[id] = data
+        writeBookmarks(dict)
+    }
+
+    static func loadBookmark(forProjectId id: String) -> Data? {
+        loadAllBookmarks()[id]
+    }
+
+    static func deleteBookmark(forProjectId id: String) {
+        var dict = loadAllBookmarks()
+        guard dict.removeValue(forKey: id) != nil else { return }
+        writeBookmarks(dict)
+    }
+
+    private static func loadAllBookmarks() -> [String: Data] {
+        guard let raw = try? Data(contentsOf: bookmarksFileURL),
+              let dict = try? PropertyListSerialization.propertyList(from: raw, format: nil) as? [String: Data]
+        else { return [:] }
+        return dict
+    }
+
+    private static func writeBookmarks(_ dict: [String: Data]) {
+        guard let plist = try? PropertyListSerialization.data(fromPropertyList: dict, format: .binary, options: 0) else { return }
+        try? plist.write(to: bookmarksFileURL, options: .atomic)
     }
 
     // MARK: - Project persistence
