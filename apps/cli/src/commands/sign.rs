@@ -37,7 +37,7 @@ pub fn run(
     }
     let key_array: Zeroizing<[u8; 32]> =
         Zeroizing::new(key_bytes.as_slice().try_into().unwrap());
-    let signing_key = signing_key_from_bytes(&*key_array).context("Failed to parse signing key")?;
+    let signing_key = signing_key_from_bytes(&key_array).context("Failed to parse signing key")?;
 
     // Resolve password once upfront (avoids double-prompting for interactive mode).
     // Stored in Zeroizing<String> so the plaintext is wiped when dropped.
@@ -103,7 +103,7 @@ pub fn run(
         let verifying_key_bytes = signing_key.verifying_key().to_bytes();
 
         // Hash the public key and register it as a package file
-        let pub_key_hash: [u8; 32] = Sha256::digest(&verifying_key_bytes).into();
+        let pub_key_hash: [u8; 32] = Sha256::digest(verifying_key_bytes).into();
         file_digests.insert("_vibe_publisher.pub".to_string(), pub_key_hash);
         all_entries.insert("_vibe_publisher.pub".to_string(), verifying_key_bytes.to_vec());
 
