@@ -424,7 +424,7 @@ struct DocumentWindowView: View {
             .appendingPathComponent("package.vibeapp")
         guard let cleanData = try? Data(contentsOf: cacheURL) else { return }
         document.rawPackageData = cleanData
-        NSApp.sendAction(#selector(NSDocument.save(_:)), to: nil, from: nil)
+        await NSApp.sendAction(#selector(NSDocument.save(_:)), to: nil, from: nil)
 
         // Step 5: Relaunch. prepare() will find no savedState and no initialState,
         // so the volume directory starts completely empty.
