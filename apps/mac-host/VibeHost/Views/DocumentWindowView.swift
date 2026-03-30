@@ -387,7 +387,7 @@ struct DocumentWindowView: View {
 
     // MARK: - Revert
 
-    private func revertAction() async {
+    @MainActor private func revertAction() async {
         guard !project.packageCachePath.isEmpty else { return }
 
         // Step 1: Cancel polling and WAIT for the task to fully exit.
@@ -424,7 +424,7 @@ struct DocumentWindowView: View {
             .appendingPathComponent("package.vibeapp")
         guard let cleanData = try? Data(contentsOf: cacheURL) else { return }
         document.rawPackageData = cleanData
-        await NSApp.sendAction(#selector(NSDocument.save(_:)), to: nil, from: nil)
+        NSApp.sendAction(#selector(NSDocument.save(_:)), to: nil, from: nil)
 
         // Step 5: Relaunch. prepare() will find no savedState and no initialState,
         // so the volume directory starts completely empty.
