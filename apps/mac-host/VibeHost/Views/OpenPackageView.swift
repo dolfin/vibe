@@ -243,6 +243,12 @@ struct OpenPackageView: View {
             self.capabilities = AppCapabilities(from: pkg.appManifest)
             self.vibePackage = pkg
         } catch {
+            // User cancelled the password prompt — close the sheet silently.
+            if case PackageDecryption.DecryptError.cancelled = error {
+                logger.info("Password prompt cancelled by user")
+                dismiss()
+                return
+            }
             let detail = String(describing: error)
             logger.error("Package load FAILED: \(detail)")
             self.errorDetail = "File: \(packageURL.lastPathComponent)\n\n\(detail)"
@@ -267,7 +273,6 @@ struct OpenPackageView: View {
 
     /// Translates technical errors into plain language for non-technical users.
     private func friendlyErrorMessage(for error: Error) -> String {
-        if case PackageDecryption.DecryptError.cancelled = error { return "" }
         let desc = String(describing: error).lowercased()
         if desc.contains("password") || desc.contains("decrypt") || desc.contains("cipher") {
             return "The password you entered is incorrect. Please try again."

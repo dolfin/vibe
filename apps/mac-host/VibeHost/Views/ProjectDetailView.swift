@@ -141,11 +141,10 @@ struct ProjectDetailSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                if let error = runtime.lastError {
-                    Text(error)
-                        .font(.system(.caption, design: .monospaced))
+                if runtime.lastError != nil {
+                    Text("Something went wrong. Try launching again, or restart the app.")
+                        .font(.caption)
                         .foregroundStyle(.red)
-                        .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
@@ -166,9 +165,12 @@ struct ProjectDetailSheet: View {
             Circle()
                 .fill(statusColor)
                 .frame(width: 10, height: 10)
+                .accessibilityHidden(true)
             Text(statusLabel)
                 .font(.subheadline.weight(.medium))
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Status: \(statusLabel)")
     }
 
     private var statusColor: Color {
@@ -183,9 +185,9 @@ struct ProjectDetailSheet: View {
     private var statusLabel: String {
         switch status {
         case .stopped: "Stopped"
-        case .starting: "Starting..."
+        case .starting: "Starting…"
         case .running: "Running"
-        case .stopping: "Stopping..."
+        case .stopping: "Stopping…"
         case .error: "Error"
         }
     }
@@ -231,19 +233,19 @@ struct ProjectDetailSheet: View {
         case .booting:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("Starting Vibe Runtime…")
+                Text("Starting up…")
                     .font(.caption).foregroundStyle(.secondary)
             }
-        case .failed(let msg):
+        case .failed:
             HStack(spacing: 6) {
                 Image(systemName: "xmark.circle").foregroundStyle(.red)
-                Text("Runtime failed: \(msg)")
-                    .font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                Text("Could not start the app runtime. Try quitting and reopening Vibe.")
+                    .font(.caption).foregroundStyle(.red)
             }
         default:
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-                Text("Vibe Runtime not running")
+                Text("App runtime is not ready yet.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -278,8 +280,8 @@ struct ProjectDetailSheet: View {
     // MARK: - Info Sections
 
     private var secretsSection: some View {
-        GroupBox("Secrets") {
-            Button("Manage Secrets…") {
+        GroupBox("API Keys") {
+            Button("Manage API Keys…") {
                 activeSheet = .secrets(.manage)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -309,7 +311,7 @@ struct ProjectDetailSheet: View {
                 if !project.capabilities.secrets.isEmpty {
                     CapabilityRow(
                         icon: "key",
-                        label: "Required Secrets",
+                        label: "Required API Keys",
                         value: project.capabilities.requiredSecrets.joined(separator: ", ")
                     )
                 }
