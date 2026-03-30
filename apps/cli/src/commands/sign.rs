@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 use zip::read::ZipArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
+use zeroize::Zeroizing;
 
 use vibe_signing::{compute_package_hash, sign_package, signing_key_from_bytes};
 
@@ -22,21 +23,26 @@ pub fn run(
 ) -> Result<()> {
     println!("Signing {}...", package_path.display().to_string().cyan());
 
-    // Read private key (32 bytes raw)
-    let key_bytes = fs::read(key_path)
-        .with_context(|| format!("Failed to read key file '{}'", key_path.display()))?;
+    // Read private key (32 bytes raw) into a Zeroizing buffer so it is
+    // wiped from memory as soon as we're done with it.
+    let key_bytes = Zeroizing::new(
+        fs::read(key_path)
+            .with_context(|| format!("Failed to read key file '{}'", key_path.display()))?,
+    );
     if key_bytes.len() != 32 {
         anyhow::bail!(
             "Invalid key file: expected 32 bytes, got {}",
             key_bytes.len()
         );
     }
-    let key_array: [u8; 32] = key_bytes.try_into().unwrap();
-    let signing_key = signing_key_from_bytes(&key_array).context("Failed to parse signing key")?;
+    let key_array: Zeroizing<[u8; 32]> =
+        Zeroizing::new(key_bytes.as_slice().try_into().unwrap());
+    let signing_key = signing_key_from_bytes(&*key_array).context("Failed to parse signing key")?;
 
-    // Resolve password once upfront (avoids double-prompting for interactive mode)
+    // Resolve password once upfront (avoids double-prompting for interactive mode).
+    // Stored in Zeroizing<String> so the plaintext is wiped when dropped.
     let is_encrypted = crate::crypto::is_encrypted_package(package_path);
-    let resolved_pw: Option<String> = if is_encrypted {
+    let resolved_pw: Option<Zeroizing<String>> = if is_encrypted {
         Some(crate::crypto::resolve_password(
             password,
             password_file,
@@ -45,7 +51,7 @@ pub fn run(
     } else {
         None
     };
-    let pw_ref = resolved_pw.as_deref();
+    let pw_ref = resolved_pw.as_deref().map(|s| s.as_str());
 
     // Open package (decrypt if encrypted)
     let zip_data = crate::crypto::open_package(package_path, pw_ref, None)?;
@@ -166,7 +172,8 @@ pub fn run(
         zip_writer.finish()?;
     }
 
-    // Write back: re-encrypt if original was encrypted, otherwise write plain
+    // Write back: re-encrypt if original was encrypted, otherwise write plain.
+    // pw is Zeroizing<String>; pass as bytes without copying into a plain String.
     if let Some(pw) = resolved_pw {
         let (ciphertext, enc_meta) = crate::crypto::encrypt_package(&new_zip_data, pw.as_bytes())?;
         crate::crypto::write_encrypted_vibeapp(&ciphertext, &enc_meta, package_path)?;

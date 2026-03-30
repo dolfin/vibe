@@ -31,6 +31,7 @@ ed25519-dalek = { workspace = true }
 aes-gcm = { workspace = true }
 argon2 = { workspace = true }
 rand = { workspace = true }
+zeroize = { workspace = true }
 rpassword = "7"
 clap_mangen = "0.2"
 

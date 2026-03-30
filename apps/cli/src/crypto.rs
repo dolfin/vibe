@@ -10,6 +10,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
+use zeroize::Zeroizing;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KdfParams {
@@ -41,7 +42,7 @@ impl EncryptionMetadata {
 }
 
 /// Argon2id key derivation (OWASP interactive profile).
-pub fn derive_key(password: &[u8], meta: &EncryptionMetadata) -> Result<[u8; 32]> {
+pub fn derive_key(password: &[u8], meta: &EncryptionMetadata) -> Result<Zeroizing<[u8; 32]>> {
     // Validate cost parameters to prevent DoS via maliciously crafted package metadata.
     // Ceilings match the values used during encryption; a legitimate package will never exceed them.
     const MAX_M_COST: u32 = 65536; // 64 MiB
@@ -79,9 +80,9 @@ pub fn derive_key(password: &[u8], meta: &EncryptionMetadata) -> Result<[u8; 32]
     .map_err(|e| anyhow::anyhow!("Invalid Argon2 params: {}", e))?;
 
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-    let mut key = [0u8; 32];
+    let mut key = Zeroizing::new([0u8; 32]);
     argon2
-        .hash_password_into(password, &salt, &mut key)
+        .hash_password_into(password, &salt, key.as_mut())
         .map_err(|e| anyhow::anyhow!("Argon2 key derivation failed: {}", e))?;
     Ok(key)
 }
@@ -108,7 +109,7 @@ pub fn encrypt_package(plaintext: &[u8], password: &[u8]) -> Result<(Vec<u8>, En
     };
 
     let key_bytes = derive_key(password, &meta)?;
-    let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
+    let key = Key::<Aes256Gcm>::from_slice(key_bytes.as_ref());
     let cipher = Aes256Gcm::new(key);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
@@ -126,7 +127,7 @@ pub fn decrypt_package(
     meta: &EncryptionMetadata,
 ) -> Result<Vec<u8>> {
     let key_bytes = derive_key(password, meta)?;
-    let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
+    let key = Key::<Aes256Gcm>::from_slice(key_bytes.as_ref());
     let cipher = Aes256Gcm::new(key);
     let nonce_bytes = meta.nonce_bytes()?;
     let nonce = Nonce::from_slice(&nonce_bytes);
@@ -201,21 +202,23 @@ pub fn is_encrypted_package(path: &Path) -> bool {
 }
 
 /// Resolve password: --password > --password-file > interactive prompt.
+/// Returns a `Zeroizing<String>` so the plaintext password is wiped from
+/// memory as soon as the caller drops it.
 pub fn resolve_password(
     password: Option<&str>,
     password_file: Option<&Path>,
     prompt: &str,
-) -> Result<String> {
+) -> Result<Zeroizing<String>> {
     if let Some(pw) = password {
-        return Ok(pw.to_string());
+        return Ok(Zeroizing::new(pw.to_string()));
     }
     if let Some(path) = password_file {
         let contents = fs::read_to_string(path)
             .with_context(|| format!("Failed to read password file '{}'", path.display()))?;
-        return Ok(contents.trim().to_string());
+        return Ok(Zeroizing::new(contents.trim().to_string()));
     }
     let pw = rpassword::prompt_password(prompt).context("Failed to read password interactively")?;
-    Ok(pw)
+    Ok(Zeroizing::new(pw))
 }
 
 /// If package is encrypted, decrypt it in memory. If not, read raw bytes.
@@ -227,6 +230,7 @@ pub fn open_package(
     if is_encrypted_package(path) {
         let (ciphertext, meta) = read_encrypted_vibeapp(path)?;
         let pw = resolve_password(password, password_file, "Password: ")?;
+        // pw is Zeroizing<String>; pass as bytes without copying into a plain String
         let plaintext = decrypt_package(&ciphertext, pw.as_bytes(), &meta)?;
         Ok(plaintext)
     } else {
@@ -243,6 +247,7 @@ pub fn save_package(
 ) -> Result<()> {
     if password.is_some() || password_file.is_some() {
         let pw = resolve_password(password, password_file, "Password: ")?;
+        // pw is Zeroizing<String>; pass as bytes without copying into a plain String
         let (ciphertext, meta) = encrypt_package(bytes, pw.as_bytes())?;
         write_encrypted_vibeapp(&ciphertext, &meta, dest)
     } else {
@@ -410,7 +415,7 @@ mod tests {
     #[test]
     fn resolve_password_direct() {
         let result = resolve_password(Some("mypass"), None, "").unwrap();
-        assert_eq!(result, "mypass");
+        assert_eq!(result.as_str(), "mypass");
     }
 
     #[test]
@@ -419,7 +424,7 @@ mod tests {
         let pw_file = dir.path().join("pw.txt");
         fs::write(&pw_file, "mypass\n").unwrap();
         let result = resolve_password(None, Some(&pw_file), "").unwrap();
-        assert_eq!(result, "mypass");
+        assert_eq!(result.as_str(), "mypass");
     }
 
     #[test]

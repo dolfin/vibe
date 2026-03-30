@@ -1267,6 +1267,7 @@ dependencies = [
  "tempfile",
  "vibe-manifest",
  "vibe-signing",
+ "zeroize",
  "zip",
 ]
 
