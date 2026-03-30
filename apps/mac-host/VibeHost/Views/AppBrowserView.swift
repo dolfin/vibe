@@ -57,21 +57,26 @@ struct AppBrowserView: View {
             }
             .buttonStyle(.plain)
             .help("Close")
+            .accessibilityLabel("Close")
             .padding(.trailing, 6)
 
             // Navigation buttons (always visible in AppBrowserView)
-            navButton(systemImage: "chevron.backward", action: { navControl.goBack?() }, enabled: canGoBack, tooltip: "Back")
-            navButton(systemImage: "chevron.forward", action: { navControl.goForward?() }, enabled: canGoForward, tooltip: "Forward")
+            navButton(systemImage: "chevron.backward", action: { navControl.goBack?() }, enabled: canGoBack, tooltip: "Back", accessibilityLabel: "Go back")
+            navButton(systemImage: "chevron.forward", action: { navControl.goForward?() }, enabled: canGoForward, tooltip: "Forward", accessibilityLabel: "Go forward")
             reloadStopButton
 
             Spacer()
 
-            Circle()
-                .fill(loadError == nil ? Color.green : Color.red)
-                .frame(width: 8, height: 8)
-
-            Text(appName)
-                .fontWeight(.medium)
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(loadError == nil ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+                Text(appName)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .accessibilityLabel(loadError == nil ? "\(appName) — connected" : "\(appName) — connection error")
+            }
 
             Spacer()
 
@@ -87,7 +92,7 @@ struct AppBrowserView: View {
         .background(.bar)
     }
 
-    private func navButton(systemImage: String, action: @escaping () -> Void, enabled: Bool, tooltip: String) -> some View {
+    private func navButton(systemImage: String, action: @escaping () -> Void, enabled: Bool, tooltip: String, accessibilityLabel: String) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 14, weight: .medium))
@@ -97,6 +102,7 @@ struct AppBrowserView: View {
         .disabled(!enabled)
         .foregroundStyle(enabled ? .primary : .tertiary)
         .help(tooltip)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private var reloadStopButton: some View {
@@ -110,6 +116,7 @@ struct AppBrowserView: View {
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
         .help(isLoading ? "Stop" : "Reload")
+        .accessibilityLabel(isLoading ? "Stop loading" : "Reload page")
     }
 
     private func errorState(_ message: String) -> some View {

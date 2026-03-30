@@ -2,9 +2,9 @@ import Foundation
 
 struct VaultEntry: Identifiable, Codable {
     let id: UUID
-    var label: String        // "Work OpenAI Key"
+    var label: String        // "Database Password"
     var notes: String        // optional free text
-    var envVarTags: [String] // ["OPENAI_API_KEY", "OPENAI_KEY"] — any match satisfies a request
+    var envVarTags: [String] // ["DB_PASSWORD", "DATABASE_URL"] — any match satisfies a request
     let createdAt: Date
 
     init(

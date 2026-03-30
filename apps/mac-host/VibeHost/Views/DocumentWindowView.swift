@@ -55,6 +55,7 @@ struct DocumentWindowView: View {
                             }
                             .disabled(!canGoBack)
                             .help("Back")
+                            .accessibilityLabel("Go back")
                         }
                         if ui.showForwardButton {
                             Button {
@@ -64,6 +65,7 @@ struct DocumentWindowView: View {
                             }
                             .disabled(!canGoForward)
                             .help("Forward")
+                            .accessibilityLabel("Go forward")
                         }
                         if ui.showReloadButton {
                             Button {
@@ -72,6 +74,7 @@ struct DocumentWindowView: View {
                                 Image(systemName: isWebLoading ? "xmark" : "arrow.clockwise")
                             }
                             .help(isWebLoading ? "Stop" : "Reload")
+                            .accessibilityLabel(isWebLoading ? "Stop loading" : "Reload page")
                         }
                         if ui.showHomeButton {
                             Button {
@@ -80,6 +83,7 @@ struct DocumentWindowView: View {
                                 Image(systemName: "house")
                             }
                             .help("Home")
+                            .accessibilityLabel("Go to home page")
                         }
                     }
                     Button {
@@ -88,6 +92,7 @@ struct DocumentWindowView: View {
                         Image(systemName: "info.circle")
                     }
                     .help("Get Info")
+                    .accessibilityLabel("App information")
                 }
             }
             .sheet(item: $activeSheet) { sheet in
@@ -405,7 +410,13 @@ struct DocumentWindowView: View {
 
         // Step 3: Delete saved state — now safe, no writer can race.
         let stateDir = StorageManager.stateDir(for: project.packageCachePath)
-        try? FileManager.default.removeItem(at: stateDir)
+        do {
+            try FileManager.default.removeItem(at: stateDir)
+        } catch {
+            if (error as NSError).code != NSFileNoSuchFileError {
+                logger.warning("Failed to remove state directory: \(error)")
+            }
+        }
 
         // Step 4: Write the clean (state-free) cached package back to disk.
         let cacheURL = StorageManager.packageCacheDir
@@ -413,7 +424,7 @@ struct DocumentWindowView: View {
             .appendingPathComponent("package.vibeapp")
         guard let cleanData = try? Data(contentsOf: cacheURL) else { return }
         document.rawPackageData = cleanData
-        await NSApp.sendAction(Selector(("saveDocument:")), to: nil, from: nil)
+        NSApp.sendAction(#selector(NSDocument.save(_:)), to: nil, from: nil)
 
         // Step 5: Relaunch. prepare() will find no savedState and no initialState,
         // so the volume directory starts completely empty.
@@ -572,6 +583,7 @@ private struct ProjectInfoView: View {
                         }
                         .buttonStyle(.plain)
                         .help(currentProject.isFavorite ? "Remove from Favorites" : "Add to Favorites")
+                        .accessibilityLabel(currentProject.isFavorite ? "Remove from Favorites" : "Add to Favorites")
 
                         if lockableURL != nil {
                             Button { toggleFileLock() } label: {
@@ -581,6 +593,7 @@ private struct ProjectInfoView: View {
                             }
                             .buttonStyle(.plain)
                             .help(isFileLocked ? "Unlock File" : "Lock File")
+                            .accessibilityLabel(isFileLocked ? "Unlock File" : "Lock File")
                         }
                     }
                 }
@@ -597,9 +610,12 @@ private struct ProjectInfoView: View {
                         Circle()
                             .fill(statusIndicatorColor)
                             .frame(width: 10, height: 10)
+                            .accessibilityHidden(true)
                         Text(statusLabel)
                             .font(.subheadline.weight(.medium))
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Status: \(statusLabel)")
                     .padding(.vertical, 4)
 
                     if let msg = runtime.statusMessage(for: project) {
@@ -615,23 +631,29 @@ private struct ProjectInfoView: View {
                     if status == .running {
                         Divider()
 
-                        Toggle("Expose to machine", isOn: Binding(
-                            get: { runtime.isExposed(project) },
-                            set: { exposed in
-                                Task {
-                                    if exposed {
-                                        await runtime.exposeProject(project)
-                                    } else {
-                                        await runtime.unexposeProject(project)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Toggle("Enable Local Web Address", isOn: Binding(
+                                get: { runtime.isExposed(project) },
+                                set: { exposed in
+                                    Task {
+                                        if exposed {
+                                            await runtime.exposeProject(project)
+                                        } else {
+                                            await runtime.unexposeProject(project)
+                                        }
+                                        NotificationCenter.default.post(
+                                            name: .vibeExposeChanged,
+                                            object: nil,
+                                            userInfo: ["projectId": project.id, "exposed": exposed]
+                                        )
                                     }
-                                    NotificationCenter.default.post(
-                                        name: .vibeExposeChanged,
-                                        object: nil,
-                                        userInfo: ["projectId": project.id, "exposed": exposed]
-                                    )
                                 }
-                            }
-                        ))
+                            ))
+                            Text("Makes this app accessible at a local address on your Mac, so you can open it in any browser or app.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         .padding(.top, 4)
 
                         if runtime.isExposed(project), let port = runtime.exposedPort(for: project) {

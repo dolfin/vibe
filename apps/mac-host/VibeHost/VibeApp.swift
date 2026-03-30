@@ -73,8 +73,8 @@ struct VibeApp: App {
         .defaultSize(width: 560, height: 480)
         .commandsRemoved()
 
-        // Secret Vault window (Window menu > Secret Vault, or ⌘⇧K)
-        Window("Secret Vault", id: "vault") {
+        // Saved Keys window (Window menu > Saved Keys, or ⌘⇧K)
+        Window("Saved Keys", id: "vault") {
             NavigationStack {
                 VaultView()
             }
@@ -107,7 +107,7 @@ private struct LibraryWindowRoot: View {
             )) {
                 Button("OK") { importError = nil }
             } message: {
-                Text(importError ?? "")
+                Text(importError ?? "The app could not be opened. The file may be damaged or incompatible.")
             }
     }
 

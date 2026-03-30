@@ -7,21 +7,42 @@ struct VaultView: View {
     @State private var editingEntry: VaultEntry? = nil
     @State private var isAddingNew = false
     @State private var confirmDelete: VaultEntry? = nil
+    @State private var showCopiedToast = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            searchBar
+        ZStack {
+            VStack(spacing: 0) {
+                searchBar
 
-            Divider()
+                Divider()
 
-            if filteredEntries.isEmpty {
-                emptyState
-            } else {
-                entryList
+                if filteredEntries.isEmpty {
+                    emptyState
+                } else {
+                    entryList
+                }
+            }
+
+            // "Copied" toast overlay
+            if showCopiedToast {
+                VStack {
+                    Spacer()
+                    Text("Copied to clipboard")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.black.opacity(0.75), in: Capsule())
+                        .padding(.bottom, 20)
+                }
+                .frame(maxWidth: .infinity)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .allowsHitTesting(false)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: showCopiedToast)
         .frame(minWidth: 520, minHeight: 400)
-        .navigationTitle("Secret Vault")
+        .navigationTitle("Saved Keys")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -29,7 +50,8 @@ struct VaultView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
-                .help("Add new vault entry")
+                .help("Add new saved key")
+                .accessibilityLabel("Add saved key")
             }
         }
         .sheet(isPresented: $isAddingNew) {
@@ -38,7 +60,7 @@ struct VaultView: View {
         .sheet(item: $editingEntry) { entry in
             VaultEntryEditView(entry: entry)
         }
-        .alert("Delete Secret?", isPresented: Binding(
+        .alert("Delete This Key?", isPresented: Binding(
             get: { confirmDelete != nil },
             set: { if !$0 { confirmDelete = nil } }
         )) {
@@ -51,7 +73,12 @@ struct VaultView: View {
             Button("Cancel", role: .cancel) { confirmDelete = nil }
         } message: {
             if let entry = confirmDelete {
-                Text("\"\(entry.label)\" will be permanently deleted and any apps bound to it will be prompted again.")
+                let usageCount = vaultStore.usageCount(for: entry)
+                if usageCount > 0 {
+                    Text("\"\(entry.label)\" will be permanently deleted. The \(usageCount == 1 ? "app using it" : "\(usageCount) apps using it") will ask you for this key again next time.")
+                } else {
+                    Text("\"\(entry.label)\" will be permanently deleted.")
+                }
             }
         }
     }
@@ -71,6 +98,7 @@ struct VaultView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Clear search")
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 16)
@@ -141,6 +169,7 @@ struct VaultView: View {
                 Capsule()
                     .strokeBorder(count == 0 ? Color.secondary.opacity(0.3) : Color.clear, lineWidth: 1)
             )
+            .accessibilityLabel(count == 0 ? "Not used by any apps" : count == 1 ? "Used by 1 app" : "Used by \(count) apps")
     }
 
     // MARK: - Empty State
@@ -150,19 +179,19 @@ struct VaultView: View {
             Image(systemName: "key.horizontal")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text(searchText.isEmpty ? "No Secrets Yet" : "No Results")
+            Text(searchText.isEmpty ? "No Saved Keys Yet" : "No Results")
                 .font(.title3.weight(.semibold))
             Text(
                 searchText.isEmpty
                     ? "Add API keys and credentials here to reuse them across apps."
-                    : "No entries match \"\(searchText)\""
+                    : "No saved keys match \"\(searchText)\""
             )
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .frame(maxWidth: 300)
             if searchText.isEmpty {
-                Button("Add Secret") { isAddingNew = true }
+                Button("Add a Key") { isAddingNew = true }
                     .buttonStyle(.borderedProminent)
                     .padding(.top, 4)
             }
@@ -192,5 +221,9 @@ struct VaultView: View {
         guard let value = vaultStore.loadValue(for: entry) else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+        showCopiedToast = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            showCopiedToast = false
+        }
     }
 }

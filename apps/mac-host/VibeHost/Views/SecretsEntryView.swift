@@ -257,7 +257,7 @@ struct SecretsEntryView: View {
             .toggleStyle(.checkbox)
 
             if saveToVault[secret.name] == true {
-                TextField("Label (e.g. \"Work OpenAI Key\")", text: vaultLabelBinding(for: secret.name))
+                TextField("Label (e.g. \"Database Password\")", text: vaultLabelBinding(for: secret.name))
                     .textFieldStyle(.roundedBorder)
                     .font(.subheadline)
                     .padding(.leading, 20)

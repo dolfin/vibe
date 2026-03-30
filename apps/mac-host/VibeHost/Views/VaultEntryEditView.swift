@@ -82,7 +82,7 @@ struct VaultEntryEditView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Name")
                 .font(.subheadline.weight(.medium))
-            TextField("e.g. Work OpenAI Key", text: $label)
+            TextField("e.g. Database Password", text: $label)
                 .textFieldStyle(.roundedBorder)
         }
     }

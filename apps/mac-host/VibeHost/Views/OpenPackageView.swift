@@ -27,7 +27,7 @@ struct OpenPackageView: View {
             } else if let pkg = vibePackage {
                 packageInfo(pkg)
             } else {
-                ProgressView("Loading package...")
+                ProgressView("Loading package…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
@@ -38,7 +38,7 @@ struct OpenPackageView: View {
         .task {
             await loadPackage()
         }
-        .alert("Error Details", isPresented: $showErrorAlert) {
+        .alert("Technical Details", isPresented: $showErrorAlert) {
             Button("Copy to Clipboard") {
                 if let detail = errorDetail {
                     NSPasteboard.general.clearContents()
@@ -47,7 +47,7 @@ struct OpenPackageView: View {
             }
             Button("OK", role: .cancel) {}
         } message: {
-            Text(errorDetail ?? "Unknown error")
+            Text(errorDetail ?? "No additional details available.")
         }
     }
 
@@ -245,8 +245,8 @@ struct OpenPackageView: View {
         } catch {
             let detail = String(describing: error)
             logger.error("Package load FAILED: \(detail)")
-            self.errorDetail = "URL: \(packageURL.path)\n\n\(detail)"
-            self.errorMessage = error.localizedDescription
+            self.errorDetail = "File: \(packageURL.lastPathComponent)\n\n\(detail)"
+            self.errorMessage = friendlyErrorMessage(for: error)
         }
     }
 
@@ -261,7 +261,23 @@ struct OpenPackageView: View {
         } catch {
             let detail = String(describing: error)
             self.errorDetail = "Import error:\n\n\(detail)"
-            self.errorMessage = error.localizedDescription
+            self.errorMessage = friendlyErrorMessage(for: error)
         }
+    }
+
+    /// Translates technical errors into plain language for non-technical users.
+    private func friendlyErrorMessage(for error: Error) -> String {
+        if case PackageDecryption.DecryptError.cancelled = error { return "" }
+        let desc = String(describing: error).lowercased()
+        if desc.contains("password") || desc.contains("decrypt") || desc.contains("cipher") {
+            return "The password you entered is incorrect. Please try again."
+        }
+        if desc.contains("zip") || desc.contains("archive") || desc.contains("corrupt") {
+            return "This file doesn't appear to be a valid Vibe app. It may be damaged or incomplete."
+        }
+        if desc.contains("notfound") || desc.contains("no such file") {
+            return "The file could not be found. It may have been moved or deleted."
+        }
+        return "This file could not be opened. It may be damaged or incompatible with this version of Vibe."
     }
 }

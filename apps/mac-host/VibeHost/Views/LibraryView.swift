@@ -37,14 +37,14 @@ struct LibraryView: View {
             }
 
             if store.projects.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "square.dashed")
-                        .font(.system(size: 32))
+                VStack(spacing: 10) {
+                    Image(systemName: "tray")
+                        .font(.system(size: 36))
                         .foregroundStyle(.tertiary)
-                    Text("No apps yet")
+                    Text("No Apps Yet")
                         .font(.headline)
                         .foregroundStyle(.secondary)
-                    Text("Browse for a .vibeapp file to get started.")
+                    Text("Open a .vibeapp file to get started.")
                         .font(.subheadline)
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)
