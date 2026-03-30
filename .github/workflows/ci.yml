@@ -42,7 +42,7 @@ jobs:
 
   swift:
     name: Swift
-    runs-on: macos-14
+    runs-on: macos-15
     defaults:
       run:
         working-directory: apps/mac-host

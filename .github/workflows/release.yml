@@ -4,9 +4,14 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.2)'
+        required: true
 
 env:
-  VERSION: ${{ github.ref_name }}
+  VERSION: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
   # ── Tests ──────────────────────────────────────────────────────────────────
@@ -39,7 +44,7 @@ jobs:
 
   test-swift:
     name: Test (Swift)
-    runs-on: macos-14
+    runs-on: macos-15
     defaults:
       run:
         working-directory: apps/mac-host
@@ -65,10 +70,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             artifact: vibe-aarch64-apple-darwin
-          - os: macos-14
+          - os: macos-15
             target: x86_64-apple-darwin
             artifact: vibe-x86_64-apple-darwin
           - os: ubuntu-latest
@@ -110,7 +115,7 @@ jobs:
   create-universal-cli:
     name: Create Universal CLI
     needs: build-cli
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Download arm64 binary
         uses: actions/download-artifact@v4
@@ -176,7 +181,7 @@ jobs:
   build-mac-app:
     name: Build macOS App
     needs: [test-rust, test-swift]
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       KEYCHAIN_NAME: release.keychain
       KEYCHAIN_PASSWORD: ci-temp-keychain
