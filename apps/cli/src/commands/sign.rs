@@ -7,10 +7,10 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use ed25519_dalek::Signature;
 use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
 use zip::read::ZipArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
-use zeroize::Zeroizing;
 
 use vibe_signing::{compute_package_hash, sign_package, signing_key_from_bytes};
 
@@ -35,8 +35,7 @@ pub fn run(
             key_bytes.len()
         );
     }
-    let key_array: Zeroizing<[u8; 32]> =
-        Zeroizing::new(key_bytes.as_slice().try_into().unwrap());
+    let key_array: Zeroizing<[u8; 32]> = Zeroizing::new(key_bytes.as_slice().try_into().unwrap());
     let signing_key = signing_key_from_bytes(&key_array).context("Failed to parse signing key")?;
 
     // Resolve password once upfront (avoids double-prompting for interactive mode).
@@ -105,7 +104,10 @@ pub fn run(
         // Hash the public key and register it as a package file
         let pub_key_hash: [u8; 32] = Sha256::digest(verifying_key_bytes).into();
         file_digests.insert("_vibe_publisher.pub".to_string(), pub_key_hash);
-        all_entries.insert("_vibe_publisher.pub".to_string(), verifying_key_bytes.to_vec());
+        all_entries.insert(
+            "_vibe_publisher.pub".to_string(),
+            verifying_key_bytes.to_vec(),
+        );
 
         // Patch _vibe_app_manifest.json to reference the embedded key
         if let Some(app_manifest_bytes) = all_entries.get("_vibe_app_manifest.json").cloned() {
@@ -131,9 +133,8 @@ pub fn run(
         }
 
         // Re-serialize _vibe_package_manifest.json with the updated file_digests
-        let mut pkg_manifest_val: serde_json::Value =
-            serde_json::from_str(&pkg_manifest_json)
-                .context("Failed to re-parse package manifest")?;
+        let mut pkg_manifest_val: serde_json::Value = serde_json::from_str(&pkg_manifest_json)
+            .context("Failed to re-parse package manifest")?;
         let files_obj: serde_json::Map<String, serde_json::Value> = file_digests
             .iter()
             .map(|(k, v)| {
@@ -299,9 +300,14 @@ mod tests {
     fn nonexistent_package_err() {
         let dir = tempdir().unwrap();
         let (key_path, _) = keygen(dir.path());
-        assert!(
-            super::run(Path::new("/no/such/file.vibeapp"), &key_path, None, None, false).is_err()
-        );
+        assert!(super::run(
+            Path::new("/no/such/file.vibeapp"),
+            &key_path,
+            None,
+            None,
+            false
+        )
+        .is_err());
     }
 
     #[test]
@@ -381,8 +387,7 @@ mod tests {
         super::run(&output, &key_path, None, None, true).unwrap();
 
         let app_manifest_bytes = read_zip_entry(&output, "_vibe_app_manifest.json");
-        let app_manifest: serde_json::Value =
-            serde_json::from_slice(&app_manifest_bytes).unwrap();
+        let app_manifest: serde_json::Value = serde_json::from_slice(&app_manifest_bytes).unwrap();
         assert_eq!(
             app_manifest["publisher"]["signing"]["publicKeyFile"],
             serde_json::Value::String("_vibe_publisher.pub".to_string())
@@ -391,9 +396,11 @@ mod tests {
 
     #[test]
     fn embed_key_package_verifies_with_embedded_key() {
-        use std::io::Read as _;
-        use vibe_signing::{compute_package_hash, verify_package, VerificationResult, VerifyingKey};
         use ed25519_dalek::Signature as DalekSignature;
+        use std::io::Read as _;
+        use vibe_signing::{
+            compute_package_hash, verify_package, VerificationResult, VerifyingKey,
+        };
         use zip::ZipArchive;
 
         let dir = tempdir().unwrap();
@@ -413,8 +420,7 @@ mod tests {
             f.read_to_string(&mut s).unwrap();
             s
         };
-        let pkg_manifest: serde_json::Value =
-            serde_json::from_str(&pkg_manifest_json).unwrap();
+        let pkg_manifest: serde_json::Value = serde_json::from_str(&pkg_manifest_json).unwrap();
         let files = pkg_manifest["files"].as_object().unwrap();
         let mut file_digests = std::collections::BTreeMap::new();
         for (k, v) in files {

@@ -8,9 +8,9 @@ use anyhow::{Context, Result};
 use argon2::{Algorithm, Argon2, Params, Version};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
-use zeroize::Zeroizing;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KdfParams {

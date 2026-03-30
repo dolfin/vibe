@@ -3,9 +3,9 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use zeroize::Zeroizing;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
-use zeroize::Zeroizing;
 
 /// Strip `_vibe_state/*` entries from a .vibeapp, restoring it to its original signed state.
 pub fn run(package: &Path, password: Option<&str>, password_file: Option<&Path>) -> Result<()> {
@@ -23,7 +23,8 @@ pub fn run(package: &Path, password: Option<&str>, password_file: Option<&Path>)
         None
     };
 
-    let data = crate::crypto::open_package(package, resolved_pw.as_deref().map(|s| s.as_str()), None)?;
+    let data =
+        crate::crypto::open_package(package, resolved_pw.as_deref().map(|s| s.as_str()), None)?;
 
     let reader = std::io::Cursor::new(&data);
     let mut archive = zip::ZipArchive::new(reader).context("Failed to open ZIP archive")?;
