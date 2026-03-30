@@ -67,6 +67,7 @@ jobs:
         # Signs the bundled apps with the official Vibe key and updates Resources/.
         # Only runs on main pushes — forks and PRs do not have access to the secret.
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: .
         env:
           VIBE_SIGNING_KEY: ${{ secrets.VIBE_SIGNING_KEY }}
         run: make bundle-demos
