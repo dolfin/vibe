@@ -13,6 +13,7 @@ struct VaultEntryEditView: View {
     @State private var newTagText = ""
     @State private var valueText: String
     @State private var isRevealed = false
+    @State private var saveError: String?
 
     init(entry: VaultEntry? = nil) {
         self.existingEntry = entry
@@ -49,6 +50,14 @@ struct VaultEntryEditView: View {
         }
         .frame(width: 460)
         .fixedSize(horizontal: true, vertical: true)
+        .alert("Could Not Save", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK") { saveError = nil }
+        } message: {
+            Text(saveError ?? "Your key could not be saved. Please try again.")
+        }
     }
 
     // MARK: - Header
@@ -64,7 +73,7 @@ struct VaultEntryEditView: View {
                     .foregroundStyle(.blue)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(existingEntry == nil ? "New Secret" : "Edit Secret")
+                Text(existingEntry == nil ? "New Saved Key" : "Edit Saved Key")
                     .font(.headline)
                 Text("Stored securely in your Keychain")
                     .font(.subheadline)
@@ -99,18 +108,25 @@ struct VaultEntryEditView: View {
     private var envVarTagsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Env Var Tags")
+                Text("Variable Names")
                     .font(.subheadline.weight(.medium))
-                Text("Apps requesting any of these names will see this entry")
+                Text("Apps that request secrets by any of these names will use this saved key.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             ForEach(envVarTags.indices, id: \.self) { idx in
                 HStack(spacing: 8) {
-                    TextField("ENV_VAR_NAME", text: $envVarTags[idx])
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
+                    VStack(alignment: .leading, spacing: 2) {
+                        TextField("VARIABLE_NAME", text: $envVarTags[idx])
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                        if !envVarTags[idx].isEmpty && !isValidEnvVarName(envVarTags[idx]) {
+                            Text("Use only letters, numbers, and underscores (no spaces or hyphens).")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
                     Button {
                         envVarTags.remove(at: idx)
                     } label: {
@@ -118,12 +134,13 @@ struct VaultEntryEditView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Remove tag")
+                    .help("Remove")
+                    .accessibilityLabel("Remove \(envVarTags[idx])")
                 }
             }
 
             HStack(spacing: 8) {
-                TextField("Add tag…", text: $newTagText)
+                TextField("Add a variable name…", text: $newTagText)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
                     .onSubmit { addTag() }
@@ -134,7 +151,8 @@ struct VaultEntryEditView: View {
                         .foregroundStyle(.blue)
                 }
                 .buttonStyle(.plain)
-                .help("Add tag")
+                .help("Add variable name")
+                .accessibilityLabel("Add variable name")
                 .disabled(newTagText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
@@ -148,9 +166,9 @@ struct VaultEntryEditView: View {
             HStack(spacing: 0) {
                 Group {
                     if isRevealed {
-                        TextField(existingEntry != nil ? "enter to replace" : "paste or type", text: $valueText)
+                        TextField(existingEntry != nil ? "type new value to update" : "paste or type", text: $valueText)
                     } else {
-                        SecureField(existingEntry != nil ? "enter to replace" : "paste or type", text: $valueText)
+                        SecureField(existingEntry != nil ? "type new value to update" : "paste or type", text: $valueText)
                     }
                 }
                 .textFieldStyle(.plain)
@@ -174,7 +192,9 @@ struct VaultEntryEditView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 4)
-                .help(isRevealed ? "Hide" : "Show")
+                .help(isRevealed ? "Hide value" : "Show value")
+                .accessibilityLabel(isRevealed ? "Hide key value" : "Show key value")
+                .accessibilityHint("Toggles whether the key is shown as plain text or hidden")
             }
             .background(.background, in: RoundedRectangle(cornerRadius: 8))
             .overlay(
@@ -205,6 +225,16 @@ struct VaultEntryEditView: View {
         !envVarTags.filter({ !$0.trimmingCharacters(in: .whitespaces).isEmpty }).isEmpty
     }
 
+    // MARK: - Validation
+
+    /// Returns true if the name is a valid shell variable name (letters, digits, underscores; not starting with a digit).
+    private func isValidEnvVarName(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        let pattern = "^[A-Za-z_][A-Za-z0-9_]*$"
+        return trimmed.range(of: pattern, options: .regularExpression) != nil
+    }
+
     // MARK: - Actions
 
     private func addTag() {
@@ -225,13 +255,23 @@ struct VaultEntryEditView: View {
             updated.envVarTags = cleanTags
             vaultStore.update(updated)
             if !valueText.isEmpty {
-                try? vaultStore.save(valueText, for: updated)
+                do {
+                    try vaultStore.save(valueText, for: updated)
+                } catch {
+                    saveError = "Your key details were saved but the secret value could not be stored in the Keychain. Please try again."
+                    return
+                }
             }
         } else {
             let entry = VaultEntry(label: cleanLabel, notes: notes, envVarTags: cleanTags)
             vaultStore.add(entry)
             if !valueText.isEmpty {
-                try? vaultStore.save(valueText, for: entry)
+                do {
+                    try vaultStore.save(valueText, for: entry)
+                } catch {
+                    saveError = "Your key details were saved but the secret value could not be stored in the Keychain. Please try again."
+                    return
+                }
             }
         }
         dismiss()

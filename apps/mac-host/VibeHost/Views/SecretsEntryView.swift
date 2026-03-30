@@ -12,7 +12,7 @@ struct SecretsEntryView: View {
     @Environment(VaultStore.self) private var vaultStore
     @Environment(\.dismiss) private var dismiss
 
-    // Per-secret selection: vault entry ID or nil = "enter new value"
+    // Per-secret selection: vault entry ID or nil = "type new value"
     @State private var selectedEntryId: [String: UUID?] = [:]
     // Text typed in "new value" fields
     @State private var textValues: [String: String] = [:]
@@ -22,6 +22,8 @@ struct SecretsEntryView: View {
     @State private var vaultLabels: [String: String] = [:]
     // Secrets currently showing their value in plain text
     @State private var revealed: Set<String> = []
+    // Error shown when a save operation fails
+    @State private var saveError: String?
 
     init(project: Project, mode: Mode, onComplete: (([String: String]) -> Void)? = nil) {
         self.project = project
@@ -52,6 +54,14 @@ struct SecretsEntryView: View {
         .frame(width: 500)
         .fixedSize(horizontal: true, vertical: true)
         .onAppear { initializeSelections() }
+        .alert("Could Not Save Key", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK") { saveError = nil }
+        } message: {
+            Text(saveError ?? "An unexpected error occurred while saving your key. Please try again.")
+        }
     }
 
     // MARK: - Initialization
@@ -62,7 +72,7 @@ struct SecretsEntryView: View {
             if let bound = vaultStore.binding(packageId: project.packageCachePath, envVar: secret.name) {
                 selectedEntryId[secret.name] = .some(bound.id)
             } else {
-                selectedEntryId[secret.name] = .some(.none)  // "enter new value"
+                selectedEntryId[secret.name] = .some(.none)  // "type new value"
             }
         }
     }
@@ -81,12 +91,12 @@ struct SecretsEntryView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(mode == .launch ? "Secrets Required" : "Manage Secrets")
+                Text(mode == .launch ? "API Keys Required" : "Manage Saved Keys")
                     .font(.headline)
-                Text("\"\(project.appName)\" requires API keys to run.")
+                Text("\"\(project.appName)\" needs these keys to run. They're stored securely on your Mac.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 0)
@@ -166,6 +176,9 @@ struct SecretsEntryView: View {
         .onTapGesture {
             selectedEntryId[secret.name] = .some(entry.id)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(entry.label), \(isSelected ? "selected" : "not selected")")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .padding(.vertical, 4)
     }
 
@@ -180,7 +193,7 @@ struct SecretsEntryView: View {
                 Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
                     .font(.system(size: 16))
                     .foregroundStyle(isSelected ? .blue : .secondary)
-                Text("Enter a new value")
+                Text("Type a new value")
                     .font(.subheadline)
                 Spacer()
             }
@@ -188,6 +201,8 @@ struct SecretsEntryView: View {
             .onTapGesture {
                 selectedEntryId[secret.name] = .some(.none)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Type a new value, \(isSelected ? "selected" : "not selected")")
             .padding(.vertical, 4)
 
             if isSelected {
@@ -202,7 +217,7 @@ struct SecretsEntryView: View {
     private func textInputSection(for secret: AppCapabilities.SecretMeta) -> some View {
         let isRevealed = revealed.contains(secret.name)
         let alreadySet = SecretsManager.load(packageId: project.packageCachePath, name: secret.name) != nil
-        let placeholder = alreadySet ? "already set — enter to replace" : "paste or type value"
+        let placeholder = alreadySet ? "already saved — type here to update" : "paste or type your key"
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 0) {
@@ -234,7 +249,9 @@ struct SecretsEntryView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 4)
-                .help(isRevealed ? "Hide" : "Show")
+                .help(isRevealed ? "Hide value" : "Show value")
+                .accessibilityLabel(isRevealed ? "Hide key value" : "Show key value")
+                .accessibilityHint("Toggles whether the key is shown as plain text or hidden")
             }
             .background(.background, in: RoundedRectangle(cornerRadius: 8))
             .overlay(
@@ -251,13 +268,13 @@ struct SecretsEntryView: View {
     private func saveToVaultSection(for secret: AppCapabilities.SecretMeta) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Toggle(isOn: saveToVaultBinding(for: secret.name)) {
-                Text("Save to vault for reuse")
+                Text("Remember this key for other apps")
                     .font(.subheadline)
             }
             .toggleStyle(.checkbox)
 
             if saveToVault[secret.name] == true {
-                TextField("Label (e.g. \"Database Password\")", text: vaultLabelBinding(for: secret.name))
+                TextField("Give it a name (e.g. \"Database Password\")", text: vaultLabelBinding(for: secret.name))
                     .textFieldStyle(.roundedBorder)
                     .font(.subheadline)
                     .padding(.leading, 20)
@@ -285,7 +302,7 @@ struct SecretsEntryView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 6)
         } label: {
-            Text("How to obtain")
+            Text("Where do I get this?")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -325,7 +342,7 @@ struct SecretsEntryView: View {
             guard let entry = vaultStore.entries.first(where: { $0.id == entryId }) else { return true }
             return vaultStore.loadValue(for: entry) == nil
         case .some(.none), nil:
-            // "Enter new value" mode — resolved if text is entered or legacy keychain has a value
+            // "Type new value" mode — resolved if text is entered or legacy keychain has a value
             let text = textValues[secret.name] ?? ""
             if !text.isEmpty { return false }
             return SecretsManager.load(packageId: project.packageCachePath, name: secret.name) == nil
@@ -336,6 +353,7 @@ struct SecretsEntryView: View {
 
     private func saveAndComplete() {
         var secrets: [String: String] = [:]
+        var encounteredSaveError = false
 
         for secret in project.capabilities.secrets {
             switch selectedEntryId[secret.name] {
@@ -348,7 +366,7 @@ struct SecretsEntryView: View {
                 }
 
             case .some(.none), nil:
-                // "Enter new value" / no vault options
+                // "Type new value" / no vault options
                 let text = textValues[secret.name] ?? ""
                 if !text.isEmpty {
                     if saveToVault[secret.name] == true {
@@ -356,10 +374,20 @@ struct SecretsEntryView: View {
                         let label = rawLabel.isEmpty ? secret.name : rawLabel
                         let newEntry = VaultEntry(label: label, envVarTags: [secret.name])
                         vaultStore.add(newEntry)
-                        try? vaultStore.save(text, for: newEntry)
-                        vaultStore.setBinding(packageId: project.packageCachePath, envVar: secret.name, to: newEntry)
+                        do {
+                            try vaultStore.save(text, for: newEntry)
+                            vaultStore.setBinding(packageId: project.packageCachePath, envVar: secret.name, to: newEntry)
+                        } catch {
+                            encounteredSaveError = true
+                            saveError = "Your key could not be saved to the vault. It will work this time but you may be asked again next launch."
+                        }
                     } else {
-                        try? SecretsManager.save(text, packageId: project.packageCachePath, name: secret.name)
+                        do {
+                            try SecretsManager.save(text, packageId: project.packageCachePath, name: secret.name)
+                        } catch {
+                            encounteredSaveError = true
+                            saveError = "Your key could not be saved to the keychain. It will work this time but you may be asked again next launch."
+                        }
                     }
                     secrets[secret.name] = text
                 } else if let existing = SecretsManager.load(packageId: project.packageCachePath, name: secret.name) {
@@ -368,8 +396,14 @@ struct SecretsEntryView: View {
             }
         }
 
-        dismiss()
-        onComplete?(secrets)
+        if encounteredSaveError {
+            // Keep sheet open to show the error; pass secrets to caller so launch can proceed
+            // once the user acknowledges.
+            onComplete?(secrets)
+        } else {
+            dismiss()
+            onComplete?(secrets)
+        }
     }
 
     // MARK: - Helpers
