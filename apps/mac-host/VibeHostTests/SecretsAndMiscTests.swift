@@ -149,10 +149,10 @@ final class ProjectStoreTests: XCTestCase {
         store.projects.removeAll { $0.id == p2.id }
     }
 
-    func testDemoPublicKeyIsNilOrData() {
+    func testVibeOfficialPublicKeyIsNilOrData() {
         let store = ProjectStore()
         // In the test bundle, the resource may or may not exist — either is valid
-        let key = store.demoPublicKey
+        let key = store.vibeOfficialPublicKey
         if let key {
             XCTAssertFalse(key.isEmpty)
         } else {

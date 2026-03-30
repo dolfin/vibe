@@ -98,17 +98,29 @@ enum PackageExtractor {
 
         let archive = try Archive(data: data, accessMode: .read, pathEncoding: nil)
 
-        let canonicalDir = directory.standardized
+        // Resolve symlinks on the base directory so our prefix check uses the real path.
+        let canonicalDir = directory.resolvingSymlinksInPath()
 
         for entry in archive {
             let name = entry.path
             // Skip metadata files
             if name.hasPrefix("_vibe_") { continue }
 
-            let destURL = directory.appendingPathComponent(name).standardized
+            // Reject symlink entries — a symlink pointing outside the sandbox could let
+            // a subsequent archive entry escape the extraction directory (ZIP slip via symlink).
+            if entry.type == .symlink {
+                throw ExtractionError.pathTraversal(name)
+            }
 
-            // Prevent ZIP slip: reject any path that escapes the extraction directory
-            guard destURL.path.hasPrefix(canonicalDir.path + "/") || destURL.path == canonicalDir.path else {
+            // Build destination from the resolved canonical base so that any symlinks
+            // created during a previous iteration are not followed.
+            let destURL = canonicalDir.appendingPathComponent(name).standardized
+
+            // Prevent ZIP slip: reject any path that escapes the extraction directory.
+            // Use lowercased() comparison because macOS APFS is case-insensitive by default.
+            let destLower = destURL.path.lowercased()
+            let baseLower = canonicalDir.path.lowercased()
+            guard destLower.hasPrefix(baseLower + "/") || destLower == baseLower else {
                 throw ExtractionError.pathTraversal(name)
             }
 
@@ -165,22 +177,44 @@ enum PackageExtractor {
             defer { try? fm.removeItem(at: tmpURL) }
             try tarData.write(to: tmpURL)
 
-            // Pre-scan: list all tar entry paths and reject any that escape the target directory
-            let listProc = Process()
-            listProc.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-            listProc.arguments = ["-tzf", tmpURL.path]
-            let listPipe = Pipe()
-            listProc.standardOutput = listPipe
-            listProc.standardError = Pipe()
-            try listProc.run()
-            let listData = listPipe.fileHandleForReading.readDataToEndOfFile()
-            listProc.waitUntilExit()
-            if let listing = String(data: listData, encoding: .utf8) {
-                for entryPath in listing.split(separator: "\n").map(String.init) {
-                    // Reject absolute paths and any path with traversal components
-                    if entryPath.hasPrefix("/") || entryPath.contains("../") || entryPath == ".." {
-                        throw ExtractionError.pathTraversal(entryPath)
-                    }
+            // Pre-scan in two passes to avoid ambiguity from spaces in paths:
+            //
+            // Pass 1 — -tzf (plain list): one path per line, no extra metadata.
+            //   Used for path traversal and absolute-path checks.
+            //   This format handles paths with spaces correctly.
+            //
+            // Pass 2 — -tvzf (verbose): permission flags prepended to each line.
+            //   Used only for symlink detection: BSD tar prefixes symlink entries
+            //   with 'l' and appends " -> <target>".  Either indicator alone is
+            //   sufficient to reject the entry; we check both for defence-in-depth.
+            let runTar: ([String]) throws -> String = { args in
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+                p.arguments = args
+                let pipe = Pipe()
+                p.standardOutput = pipe
+                p.standardError = Pipe()
+                try p.run()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                return String(data: data, encoding: .utf8) ?? ""
+            }
+
+            // Pass 1: path traversal / absolute-path check
+            let plainListing = try runTar(["-tzf", tmpURL.path])
+            for entryPath in plainListing.split(separator: "\n").map(String.init) {
+                if entryPath.hasPrefix("/") || entryPath.contains("../") || entryPath == ".." {
+                    throw ExtractionError.pathTraversal(entryPath)
+                }
+            }
+
+            // Pass 2: symlink detection
+            let verboseListing = try runTar(["-tvzf", tmpURL.path])
+            for line in verboseListing.split(separator: "\n").map(String.init) {
+                // Symlink entries: permission string starts with 'l' (e.g. "lrwxrwxrwx …")
+                // and the path is shown as "name -> target".
+                if line.first == "l" || line.contains(" -> ") {
+                    throw ExtractionError.pathTraversal("<symlink entry>")
                 }
             }
 

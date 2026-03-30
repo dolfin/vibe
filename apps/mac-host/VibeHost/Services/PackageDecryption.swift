@@ -98,6 +98,22 @@ enum PackageDecryption {
             throw DecryptError.invalidMetadata(error.localizedDescription)
         }
 
+        // Validate string field lengths to prevent memory DoS from malicious packages.
+        guard meta.cipher.count <= 32, meta.kdf.count <= 32 else {
+            throw DecryptError.invalidMetadata("metadata fields exceed maximum length")
+        }
+        // Cap KDF cost parameters to prevent CPU/memory DoS.
+        // These match the values used during encryption (m_cost=65536, t_cost=3, p_cost=4).
+        guard meta.kdfParams.mCost <= 65536 else {
+            throw DecryptError.invalidMetadata("KDF m_cost \(meta.kdfParams.mCost) exceeds maximum 65536")
+        }
+        guard meta.kdfParams.tCost <= 10 else {
+            throw DecryptError.invalidMetadata("KDF t_cost \(meta.kdfParams.tCost) exceeds maximum 10")
+        }
+        guard meta.kdfParams.pCost <= 8 else {
+            throw DecryptError.invalidMetadata("KDF p_cost \(meta.kdfParams.pCost) exceeds maximum 8")
+        }
+
         guard let payloadEntry = archive["_vibe_encrypted_payload"] else {
             throw DecryptError.missingPayload
         }

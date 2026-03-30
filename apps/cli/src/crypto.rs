@@ -42,6 +42,33 @@ impl EncryptionMetadata {
 
 /// Argon2id key derivation (OWASP interactive profile).
 pub fn derive_key(password: &[u8], meta: &EncryptionMetadata) -> Result<[u8; 32]> {
+    // Validate cost parameters to prevent DoS via maliciously crafted package metadata.
+    // Ceilings match the values used during encryption; a legitimate package will never exceed them.
+    const MAX_M_COST: u32 = 65536; // 64 MiB
+    const MAX_T_COST: u32 = 10;
+    const MAX_P_COST: u32 = 8;
+    if meta.kdf_params.m_cost > MAX_M_COST {
+        anyhow::bail!(
+            "KDF m_cost {} exceeds maximum {}",
+            meta.kdf_params.m_cost,
+            MAX_M_COST
+        );
+    }
+    if meta.kdf_params.t_cost > MAX_T_COST {
+        anyhow::bail!(
+            "KDF t_cost {} exceeds maximum {}",
+            meta.kdf_params.t_cost,
+            MAX_T_COST
+        );
+    }
+    if meta.kdf_params.p_cost > MAX_P_COST {
+        anyhow::bail!(
+            "KDF p_cost {} exceeds maximum {}",
+            meta.kdf_params.p_cost,
+            MAX_P_COST
+        );
+    }
+
     let salt = meta.salt_bytes()?;
     let params = Params::new(
         meta.kdf_params.m_cost,

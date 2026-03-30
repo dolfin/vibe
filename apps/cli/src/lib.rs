@@ -57,6 +57,9 @@ pub enum Commands {
         /// Read password from this file
         #[arg(long)]
         password_file: Option<PathBuf>,
+        /// Embed the signer's public key in the package for TOFU publisher discovery
+        #[arg(long)]
+        embed_key: bool,
     },
     /// Verify a signed .vibeapp package
     Verify {

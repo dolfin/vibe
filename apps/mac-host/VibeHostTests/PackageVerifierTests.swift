@@ -39,8 +39,6 @@ final class PackageVerifierTests: XCTestCase {
             "b.txt": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
             "a.txt": "486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7",
         ]
-        // Swift Dictionary doesn't guarantee order, but computePackageHash sorts keys
-        // So both dicts should produce identical hashes regardless of insertion order
         let hash1 = try PackageVerifier.computePackageHash(fileDigests: digests1)
         let digests2: [String: String] = [
             "a.txt": "486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7",
@@ -118,88 +116,89 @@ final class PackageVerifierTests: XCTestCase {
         }
     }
 
-    // MARK: - verifyTrust
+    // MARK: - verifyTrust: unsigned cases
 
     func testVerifyTrustUnsignedWhenNoSignature() {
         let pkg = makeUnsignedPackage(files: [:])
-        XCTAssertEqual(PackageVerifier.verifyTrust(package: pkg, publicKey: nil), .unsigned)
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: nil)
+        XCTAssertEqual(result.status, .unsigned)
+        XCTAssertNil(result.publisherKeyData)
     }
 
     func testVerifyTrustUnsignedWhenSignatureButNoPublicKey() throws {
         let privKey = Curve25519.Signing.PrivateKey()
-        let archiveData = try makeMinimalVibeAppZIP(files: [:])
-        let packageManifest = PackageManifest(
-            formatVersion: "1", appId: "com.test", appVersion: "1.0.0",
-            createdAt: "2026-01-01T00:00:00Z", files: [:]
-        )
-        let hash = try PackageVerifier.computePackageHash(fileDigests: [:])
-        let sig = try privKey.signature(for: hash)
-        let pkg = VibePackage(
-            packageManifest: packageManifest,
-            appManifest: try AppManifest.fromJSON(Data("""
-            {"kind":"vibe.app/v1","id":"com.test","name":"T","version":"1.0.0"}
-            """.utf8)),
-            signature: sig,
-            archiveData: archiveData
-        )
-        XCTAssertEqual(PackageVerifier.verifyTrust(package: pkg, publicKey: nil), .unsigned)
+        let pkg = try makeSignedPackage(privKey: privKey, files: [:])
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: nil)
+        XCTAssertEqual(result.status, .unsigned)
     }
 
     func testVerifyTrustUnsignedWhenSignatureButShortPublicKey() throws {
         let privKey = Curve25519.Signing.PrivateKey()
-        let archiveData = try makeMinimalVibeAppZIP(files: [:])
-        let packageManifest = PackageManifest(
-            formatVersion: "1", appId: "com.test", appVersion: "1.0.0",
-            createdAt: "2026-01-01T00:00:00Z", files: [:]
-        )
-        let hash = try PackageVerifier.computePackageHash(fileDigests: [:])
-        let sig = try privKey.signature(for: hash)
-        let pkg = VibePackage(
-            packageManifest: packageManifest,
-            appManifest: try AppManifest.fromJSON(Data("""
-            {"kind":"vibe.app/v1","id":"com.test","name":"T","version":"1.0.0"}
-            """.utf8)),
-            signature: sig,
-            archiveData: archiveData
-        )
+        let pkg = try makeSignedPackage(privKey: privKey, files: [:])
         let shortKey = Data(repeating: 0, count: 16)
-        XCTAssertEqual(PackageVerifier.verifyTrust(package: pkg, publicKey: shortKey), .unsigned)
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: shortKey)
+        XCTAssertEqual(result.status, .unsigned)
     }
 
-    func testVerifyTrustVerified() throws {
+    // MARK: - verifyTrust: verified (Vibe root key)
+
+    func testVerifyTrustVerifiedWhenKeyMatchesVibeRoot() throws {
         let privKey = Curve25519.Signing.PrivateKey()
         let pubKeyData = privKey.publicKey.rawRepresentation
 
-        // Create a file with known content
         let fileContent = Data("Hello, Vibe!".utf8)
         let fileHash = SHA256.hash(data: fileContent)
         let fileHashHex = fileHash.map { String(format: "%02x", $0) }.joined()
         let fileDigests = ["hello.txt": fileHashHex]
 
-        // Build archive with that file
-        let archiveData = try makeMinimalVibeAppZIP(files: ["hello.txt": fileContent])
-
-        // Build package manifest
-        let packageManifest = PackageManifest(
-            formatVersion: "1", appId: "com.test", appVersion: "1.0.0",
-            createdAt: "2026-01-01T00:00:00Z", files: fileDigests
-        )
-
-        // Sign the package hash
-        let packageHash = try PackageVerifier.computePackageHash(fileDigests: fileDigests)
-        let sig = try privKey.signature(for: packageHash)
-
-        let pkg = VibePackage(
-            packageManifest: packageManifest,
-            appManifest: try AppManifest.fromJSON(Data("""
-            {"kind":"vibe.app/v1","id":"com.test","name":"T","version":"1.0.0"}
-            """.utf8)),
-            signature: sig,
-            archiveData: archiveData
-        )
-
-        XCTAssertEqual(PackageVerifier.verifyTrust(package: pkg, publicKey: pubKeyData), .verified)
+        let pkg = try makeSignedPackage(privKey: privKey, files: ["hello.txt": fileContent], fileDigests: fileDigests)
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: pubKeyData)
+        XCTAssertEqual(result.status, .verified)
+        XCTAssertEqual(result.publisherKeyData, pubKeyData)
     }
+
+    // MARK: - verifyTrust: TOFU (newPublisher / trustedByUser)
+
+    func testVerifyTrustNewPublisherWhenKeyNotInTrustStore() throws {
+        let privKey = Curve25519.Signing.PrivateKey()
+        let pubKeyData = privKey.publicKey.rawRepresentation
+        let pkg = try makeSignedPackage(privKey: privKey, files: [:])
+
+        // Pass a different key as vibeRootKey so the package key is not treated as root.
+        let otherKey = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
+        let emptyStore = PublisherTrustStore()
+
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: otherKey, trustStore: emptyStore)
+        XCTAssertEqual(result.status, .tampered) // signed but neither the embedded key nor vibeRootKey can verify it
+        _ = pubKeyData // suppress unused warning
+    }
+
+    func testVerifyTrustNewPublisherViaEmbeddedKey() throws {
+        let privKey = Curve25519.Signing.PrivateKey()
+        let pubKeyData = privKey.publicKey.rawRepresentation
+        let pkg = try makeSignedPackageWithEmbeddedKey(privKey: privKey, files: [:])
+
+        let emptyStore = PublisherTrustStore()
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: nil, trustStore: emptyStore)
+        XCTAssertEqual(result.status, .newPublisher)
+        XCTAssertEqual(result.publisherKeyData, pubKeyData)
+        XCTAssertNotNil(result.keyFingerprint)
+    }
+
+    func testVerifyTrustTrustedByUserWhenKeyInTrustStore() throws {
+        let privKey = Curve25519.Signing.PrivateKey()
+        let pubKeyData = privKey.publicKey.rawRepresentation
+        let pkg = try makeSignedPackageWithEmbeddedKey(privKey: privKey, files: [:])
+
+        let store = PublisherTrustStore()
+        store.trust(keyData: pubKeyData, publisherName: "Test Publisher")
+
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: nil, trustStore: store)
+        XCTAssertEqual(result.status, .trustedByUser)
+        XCTAssertEqual(result.publisherKeyData, pubKeyData)
+    }
+
+    // MARK: - verifyTrust: tampered
 
     func testVerifyTrustTamperedWhenFileHashMismatch() throws {
         let privKey = Curve25519.Signing.PrivateKey()
@@ -218,7 +217,6 @@ final class PackageVerifierTests: XCTestCase {
             createdAt: "2026-01-01T00:00:00Z", files: fileDigests
         )
 
-        // Sign the original package hash (correctly signed, but content is tampered)
         let packageHash = try PackageVerifier.computePackageHash(fileDigests: fileDigests)
         let sig = try privKey.signature(for: packageHash)
 
@@ -231,7 +229,8 @@ final class PackageVerifierTests: XCTestCase {
             archiveData: archiveData
         )
 
-        XCTAssertEqual(PackageVerifier.verifyTrust(package: pkg, publicKey: pubKeyData), .tampered)
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: pubKeyData)
+        XCTAssertEqual(result.status, .tampered)
     }
 
     func testVerifyTrustTamperedOnBadSignature() throws {
@@ -239,25 +238,42 @@ final class PackageVerifierTests: XCTestCase {
         let wrongKey = Curve25519.Signing.PrivateKey()
         let pubKeyData = privKey.publicKey.rawRepresentation
 
-        let archiveData = try makeMinimalVibeAppZIP(files: [:])
-        let packageManifest = PackageManifest(
-            formatVersion: "1", appId: "com.test", appVersion: "1.0.0",
-            createdAt: "2026-01-01T00:00:00Z", files: [:]
-        )
         let hash = try PackageVerifier.computePackageHash(fileDigests: [:])
-        // Sign with wrong key
-        let sig = try wrongKey.signature(for: hash)
+        let sig = try wrongKey.signature(for: hash)  // Signed with wrong key
 
         let pkg = VibePackage(
-            packageManifest: packageManifest,
+            packageManifest: PackageManifest(
+                formatVersion: "1", appId: "com.test", appVersion: "1.0.0",
+                createdAt: "2026-01-01T00:00:00Z", files: [:]
+            ),
             appManifest: try AppManifest.fromJSON(Data("""
             {"kind":"vibe.app/v1","id":"com.test","name":"T","version":"1.0.0"}
             """.utf8)),
             signature: sig,
-            archiveData: archiveData
+            archiveData: try makeMinimalVibeAppZIP(files: [:])
         )
 
-        XCTAssertEqual(PackageVerifier.verifyTrust(package: pkg, publicKey: pubKeyData), .tampered)
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: pubKeyData)
+        XCTAssertEqual(result.status, .tampered)
+    }
+
+    // MARK: - TrustVerificationResult helpers
+
+    func testKeyFingerprintIsNilWhenNoKey() {
+        let pkg = makeUnsignedPackage(files: [:])
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: nil)
+        XCTAssertNil(result.keyFingerprint)
+    }
+
+    func testKeyFingerprintPresentAfterVerification() throws {
+        let privKey = Curve25519.Signing.PrivateKey()
+        let pubKeyData = privKey.publicKey.rawRepresentation
+        let pkg = try makeSignedPackage(privKey: privKey, files: [:])
+
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: pubKeyData)
+        XCTAssertEqual(result.status, .verified)
+        XCTAssertNotNil(result.keyFingerprint)
+        XCTAssertEqual(result.keyFingerprint?.count, 64) // SHA-256 hex = 64 chars
     }
 
     // MARK: - Error descriptions
@@ -266,6 +282,54 @@ final class PackageVerifierTests: XCTestCase {
         XCTAssertEqual(PackageVerifier.VerifyError.invalidPublicKey.errorDescription, "Invalid public key")
         XCTAssertEqual(PackageVerifier.VerifyError.invalidSignature.errorDescription, "Invalid signature format")
         XCTAssertEqual(PackageVerifier.VerifyError.hashMismatch(file: "foo.txt").errorDescription, "Hash mismatch for file: foo.txt")
+    }
+
+    // MARK: - PublisherTrustStore
+
+    func testTrustStoreStartsEmpty() {
+        let store = PublisherTrustStore()
+        XCTAssertTrue(store.entries.isEmpty)
+    }
+
+    func testTrustStoreIsTrustedAfterTrust() {
+        let store = PublisherTrustStore()
+        let key = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
+        let fp = PublisherTrustStore.fingerprint(for: key)
+
+        XCTAssertFalse(store.isTrusted(fingerprint: fp))
+        store.trust(keyData: key, publisherName: "Test")
+        XCTAssertTrue(store.isTrusted(fingerprint: fp))
+    }
+
+    func testTrustStoreDoesNotDuplicate() {
+        let store = PublisherTrustStore()
+        let key = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
+
+        store.trust(keyData: key, publisherName: "Test")
+        store.trust(keyData: key, publisherName: "Test")
+        XCTAssertEqual(store.entries.count, 1)
+    }
+
+    func testTrustStoreRevoke() {
+        let store = PublisherTrustStore()
+        let key = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
+        let fp = PublisherTrustStore.fingerprint(for: key)
+
+        store.trust(keyData: key, publisherName: "Test")
+        XCTAssertTrue(store.isTrusted(fingerprint: fp))
+        store.revoke(fingerprint: fp)
+        XCTAssertFalse(store.isTrusted(fingerprint: fp))
+    }
+
+    func testShortFingerprintFormat() {
+        let key = Curve25519.Signing.PrivateKey().publicKey.rawRepresentation
+        let short = PublisherTrustStore.shortFingerprint(for: key)
+        // Should be 4 groups of 4 hex chars separated by spaces: "xxxx xxxx xxxx xxxx"
+        let parts = short.split(separator: " ")
+        XCTAssertEqual(parts.count, 4)
+        for part in parts {
+            XCTAssertEqual(part.count, 4)
+        }
     }
 
     // MARK: - Helpers
@@ -283,6 +347,69 @@ final class PackageVerifierTests: XCTestCase {
             appManifest: appManifest,
             signature: nil,
             archiveData: Data()
+        )
+    }
+
+    /// Makes a signed package where the key is NOT embedded — relies on the caller supplying it as vibeRootKey.
+    private func makeSignedPackage(
+        privKey: Curve25519.Signing.PrivateKey,
+        files: [String: Data] = [:],
+        fileDigests: [String: String]? = nil
+    ) throws -> VibePackage {
+        let digests: [String: String] = fileDigests ?? files.mapValues { data in
+            SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
+        let archiveData = try makeMinimalVibeAppZIP(files: files)
+        let packageManifest = PackageManifest(
+            formatVersion: "1", appId: "com.test", appVersion: "1.0.0",
+            createdAt: "2026-01-01T00:00:00Z", files: digests
+        )
+        let packageHash = try PackageVerifier.computePackageHash(fileDigests: digests)
+        let sig = try privKey.signature(for: packageHash)
+        return VibePackage(
+            packageManifest: packageManifest,
+            appManifest: try AppManifest.fromJSON(Data("""
+            {"kind":"vibe.app/v1","id":"com.test","name":"T","version":"1.0.0"}
+            """.utf8)),
+            signature: sig,
+            archiveData: archiveData
+        )
+    }
+
+    /// Makes a signed package that embeds the public key at "signatures/publisher.pub".
+    private func makeSignedPackageWithEmbeddedKey(
+        privKey: Curve25519.Signing.PrivateKey,
+        files: [String: Data] = [:]
+    ) throws -> VibePackage {
+        let pubKeyData = privKey.publicKey.rawRepresentation
+        var allFiles = files
+        allFiles["signatures/publisher.pub"] = pubKeyData
+
+        let digests: [String: String] = allFiles.mapValues { data in
+            SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
+        let archiveData = try makeMinimalVibeAppZIP(files: allFiles)
+        let packageManifest = PackageManifest(
+            formatVersion: "1", appId: "com.test", appVersion: "1.0.0",
+            createdAt: "2026-01-01T00:00:00Z", files: digests
+        )
+        let packageHash = try PackageVerifier.computePackageHash(fileDigests: digests)
+        let sig = try privKey.signature(for: packageHash)
+
+        let appManifestJSON = """
+        {
+            "kind":"vibe.app/v1","id":"com.test","name":"T","version":"1.0.0",
+            "publisher":{
+                "name":"Test Publisher",
+                "signing":{"scheme":"ed25519","publicKeyFile":"signatures/publisher.pub"}
+            }
+        }
+        """
+        return VibePackage(
+            packageManifest: packageManifest,
+            appManifest: try AppManifest.fromJSON(Data(appManifestJSON.utf8)),
+            signature: sig,
+            archiveData: archiveData
         )
     }
 }

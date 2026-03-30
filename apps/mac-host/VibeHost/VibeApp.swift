@@ -111,7 +111,7 @@ private struct LibraryWindowRoot: View {
             }
     }
 
-    /// Shows an open panel, silently imports the package, then opens it as a document.
+    /// Shows an open panel and opens the selected package as a document.
     private func browseAndOpen() {
         let panel = NSOpenPanel()
         // Prefer resolving via extension so the panel works even if the exported
@@ -120,14 +120,12 @@ private struct LibraryWindowRoot: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            try projectStore.importPackage(from: url)
-            // Open from the original URL — we have sandbox access via NSOpenPanel right now,
-            // and NSDocumentController will store a security-scoped bookmark for future sessions.
-            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
-        } catch {
-            importError = error.localizedDescription
+        // VibeAppDocument.init handles decryption, icon caching, and trust verification.
+        // DocumentWindowView.task calls registerOpened, which adds the project to the library.
+        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, error in
+            if let error {
+                DispatchQueue.main.async { importError = error.localizedDescription }
+            }
         }
     }
 }

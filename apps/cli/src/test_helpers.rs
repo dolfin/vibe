@@ -50,7 +50,7 @@ pub fn build_signed_package(manifest: &Path, output: &Path) -> (PathBuf, PathBuf
     crate::commands::keygen::run(&prefix).unwrap();
     let key_path = PathBuf::from(format!("{}.key", prefix));
     let pub_path = PathBuf::from(format!("{}.pub", prefix));
-    crate::commands::sign::run(output, &key_path, None, None).unwrap();
+    crate::commands::sign::run(output, &key_path, None, None, false).unwrap();
     (key_path, pub_path)
 }
 
@@ -71,7 +71,7 @@ pub fn build_encrypted_signed_package(
     crate::commands::keygen::run(&prefix).unwrap();
     let key_path = PathBuf::from(format!("{}.key", prefix));
     let pub_path = PathBuf::from(format!("{}.pub", prefix));
-    crate::commands::sign::run(output, &key_path, Some(pw), None).unwrap();
+    crate::commands::sign::run(output, &key_path, Some(pw), None, false).unwrap();
     (key_path, pub_path)
 }
 

@@ -125,6 +125,18 @@ pub fn run(
             if name.starts_with('.') {
                 continue;
             }
+            // Validate seed directory name: only lowercase letters, digits, hyphens, underscores.
+            // This prevents null bytes, path separators, or other special characters from
+            // causing issues when the name is used as a volume name or ZIP entry path.
+            if !name
+                .bytes()
+                .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_'))
+            {
+                anyhow::bail!(
+                    "Seed directory name '{}' is invalid: only a-z, 0-9, hyphens, and underscores are allowed",
+                    name
+                );
+            }
 
             println!("  {} Seeding initial state for '{}'", "+".cyan(), name);
 
@@ -334,9 +346,28 @@ fn collect_files(
             .to_string_lossy()
             .replace('\\', "/");
 
-        // Reject path traversal
-        if rel_path.contains("..") {
+        // Reject path traversal via Path::components() — catches Unicode normalization
+        // variants and redundant separators that a plain string `.contains("..")` would miss.
+        if std::path::Path::new(&rel_path)
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+        {
             anyhow::bail!("Path traversal detected in '{}', aborting", rel_path);
+        }
+
+        // Prevent symlinks from packaging files or directories outside the project root.
+        // canonicalize() follows the full symlink chain; starts_with(base) ensures the
+        // resolved target remains within the project directory.
+        if path.is_symlink() {
+            let canonical = path
+                .canonicalize()
+                .with_context(|| format!("Failed to resolve symlink '{}'", path.display()))?;
+            if !canonical.starts_with(base) {
+                anyhow::bail!(
+                    "Symlink '{}' points outside the project directory, aborting",
+                    rel_path
+                );
+            }
         }
 
         // Check ignore patterns — prunes entire directories before recursing

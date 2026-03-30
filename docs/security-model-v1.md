@@ -69,25 +69,69 @@ vibe inspect app.vibeapp
 
 ## Trust Model
 
-Every `.vibeapp` package is assigned one of four trust states at open time.
+Every `.vibeapp` package is assigned one of five trust states at open time.
 
 ### Trust States
 
 | State | Condition | UI Treatment |
 |---|---|---|
-| **Signed + Trusted** | Valid Ed25519 signature from a publisher in the user's trust store | Green trust indicator. Capabilities shown but not gated |
-| **Signed + Untrusted** | Valid signature, but publisher is not in the user's trust store | Yellow warning. User prompted to trust publisher or proceed cautiously |
-| **Unsigned (Dev Mode)** | No signature present. Intended for local development | Orange warning. User explicitly acknowledges running unsigned code |
-| **Tampered** | Signature present but verification fails, or file digests do not match manifest | Red block. App cannot be opened. User sees tamper explanation |
+| **Verified** | Valid Ed25519 signature from the Vibe root key (bundled in the app) | Green badge. No prompt. |
+| **Trusted (TOFU)** | Valid signature from a key the user has previously trusted | Blue badge. No prompt. |
+| **New Publisher** | Valid signature, but the key has not been seen before | Orange badge. One-time trust prompt. |
+| **Unsigned (Dev Mode)** | No signature present. Intended for local development | Yellow warning. User acknowledges running unsigned code. |
+| **Tampered** | Signature present but verification fails, or file digests do not match | Red block. App cannot be opened. |
+
+### Publisher Key Resolution
+
+The host resolves the public key to use for verification in this order:
+
+1. **Embedded in package** — `publisher.signing.publicKeyFile` in the app manifest points to a 32-byte Ed25519 public key file inside the `.vibeapp` archive. If present and the file is exactly 32 bytes, it is used.
+2. **Vibe root key** — the 32-byte Ed25519 public key bundled inside the Vibe app bundle (`demo-signing.pub`). Used as fallback when no key is embedded.
+
+If neither source yields a valid 32-byte key, the package is treated as **unsigned**.
+
+### Trust On First Use (TOFU)
+
+Vibe implements TOFU for packages signed with self-generated developer keys:
+
+1. On first open of a package from an unknown publisher:
+   - The signature is verified cryptographically (proves integrity — package was not tampered with).
+   - A **"New Publisher"** prompt is shown with the publisher name and key fingerprint.
+   - The user can **"Trust Publisher"** (remembers the key permanently) or **"Open Once"** (runs this session without storing trust).
+
+2. On subsequent opens of a package from the same key:
+   - If the key was previously trusted: silent green badge (**Trusted**), no prompt.
+   - If the key was declined or never stored: prompt is shown again.
+
+3. Trust decisions are stored in:
+   ```
+   ~/Library/Application Support/Vibe/trusted-publishers.json
+   ```
+   Each entry records the full SHA-256 fingerprint of the key, the publisher name, and the timestamp.
 
 ### Verification Flow
 
-1. Check for `publisher.signing` in manifest
-2. If absent, classify as **unsigned**
-3. If present, verify detached signature against public key and root manifest hash
-4. If signature is invalid or file digests mismatch, classify as **tampered** and block
-5. If signature is valid, check whether publisher public key is in user's trust store
-6. Classify as **trusted** or **untrusted** accordingly
+1. Extract `_vibe_signature.sig` from the package archive.
+2. If absent → **Unsigned**.
+3. Attempt to extract the public key from the path in `publisher.signing.publicKeyFile`; fall back to the bundled Vibe root key.
+4. If no valid 32-byte key is available → **Unsigned**.
+5. Verify the Ed25519 signature over the package hash (SHA-256 of the sorted file-digest JSON).
+6. If signature invalid → **Tampered**.
+7. Verify each file's SHA-256 hash against the package manifest.
+8. If any hash mismatches → **Tampered**.
+9. If the key matches the Vibe root key → **Verified**.
+10. If the key fingerprint is in the user's trust store → **Trusted (TOFU)**.
+11. Otherwise → **New Publisher** (trust prompt shown before launch).
+
+### Key Fingerprints
+
+The trust store identifies keys by their **full SHA-256 fingerprint**: SHA-256 of the raw 32-byte Ed25519 public key, hex-encoded (64 characters).
+
+For UI display, a **short fingerprint** is shown: the first 16 hex characters in groups of 4 (e.g., `a1b2 c3d4 e5f6 7890`).
+
+### Future: Vibe Registry
+
+The TOFU model is the v1 trust mechanism. A planned v2 upgrade will add a Vibe-operated key registry where publishers can register and receive a countersignature from the Vibe root. Packages from registered publishers will show **Verified** automatically without a user prompt.
 
 ## Capability Prompts
 

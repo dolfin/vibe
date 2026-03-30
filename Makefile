@@ -1,4 +1,4 @@
-.PHONY: bootstrap build test coverage coverage-html lint fmt clean bundle-vm demo-packages demo-verify bundle-demos release-cli release-app docs man install acknowledgments notices
+.PHONY: bootstrap build test coverage coverage-html lint fmt clean bundle-vm official-keygen dev-keygen demo-packages demo-verify bundle-demos release-cli release-app docs man install acknowledgments notices
 
 bootstrap:
 	@echo "==> Installing Rust toolchain components..."
@@ -64,16 +64,71 @@ bundle-vm:
 	cp vm-image/dist/initrd apps/mac-host/VibeHost/Resources/initrd
 	@echo "==> VM image bundled (kernel + initrd in Resources/)"
 
-demo-packages: build
-	@echo "==> Generating demo keypair..."
+# ──────────────────────────────────────────────────────────────────────────────
+# Official key rotation
+# ──────────────────────────────────────────────────────────────────────────────
+
+# official-keygen: Generate a new official Vibe signing keypair.
+#
+# After running this target you must:
+#   1. Copy the printed base64 value into the VIBE_SIGNING_KEY GitHub secret.
+#   2. Commit the updated apps/mac-host/VibeHost/Resources/vibe-official.pub.
+#   3. Run `make bundle-demos` to re-sign the bundled apps with the new key.
+#
+# The private key is written to signing/vibe-official.key (git-ignored).
+# It is also printed as base64 once — store it in the GitHub secret immediately.
+official-keygen: build
+	@mkdir -p build/keygen signing
+	@echo "==> Generating new official Vibe signing keypair..."
+	@cargo run --bin vibe --quiet -- keygen -o build/keygen/vibe-official
+	@cp build/keygen/vibe-official.key signing/vibe-official.key
+	@cp build/keygen/vibe-official.pub apps/mac-host/VibeHost/Resources/vibe-official.pub
+	@echo ""
+	@echo "┌─────────────────────────────────────────────────────────────────────┐"
+	@echo "│  New official keypair generated.                                    │"
+	@echo "│                                                                     │"
+	@echo "│  Private key → signing/vibe-official.key  (git-ignored)            │"
+	@echo "│  Public key  → apps/mac-host/.../Resources/vibe-official.pub       │"
+	@echo "│                                                                     │"
+	@echo "│  VIBE_SIGNING_KEY (GitHub secret) — copy the value below:          │"
+	@echo "└─────────────────────────────────────────────────────────────────────┘"
+	@echo ""
+	@base64 < build/keygen/vibe-official.key
+	@echo ""
+	@echo "  Next steps:"
+	@echo "    1. Update the VIBE_SIGNING_KEY GitHub secret with the value above."
+	@echo "    2. git add apps/mac-host/VibeHost/Resources/vibe-official.pub"
+	@echo "    3. make bundle-demos   (re-sign the bundled apps)"
+	@rm -f build/keygen/vibe-official.key build/keygen/vibe-official.pub
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Developer demo packages  (signed with a local dev key)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# dev-keygen: Generate a persistent local signing keypair for development.
+# Creates build/dev/signing.{key,pub} once; does nothing if already present.
+# Packages signed with this key will show "New Publisher" in the app (TOFU
+# prompt on first open). This is expected for local development builds.
+dev-keygen: build
+	@mkdir -p build/dev
+	@if [ -f build/dev/signing.key ]; then \
+		echo "==> Dev signing key already exists at build/dev/signing.key — skipping."; \
+	else \
+		echo "==> Generating dev signing keypair at build/dev/signing..."; \
+		cargo run --bin vibe -- keygen -o build/dev/signing; \
+		echo "==> Dev keypair ready. Run 'make demo-packages' to build all demo apps."; \
+	fi
+
+# demo-packages: Package all example apps and sign them with the local dev key.
+# Depends on dev-keygen (generates a key automatically if not present).
+# Output goes to build/demo/ — nothing is copied to Resources.
+demo-packages: dev-keygen
 	@mkdir -p build/demo
-	@rm -f build/demo/demo-signing.key build/demo/demo-signing.pub
-	cargo run --bin vibe -- keygen -o build/demo/demo-signing
-	@echo "==> Packaging demo projects..."
+	@echo "==> Packaging all demo projects (signed with dev key)..."
 	@for dir in examples/nodejs-todo examples/python-api examples/static-site examples/ws-chat examples/sqlite-notes examples/postgres-bookmarks examples/redis-leaderboard examples/ui-none examples/ui-back-forward examples/ui-reload examples/ui-full; do \
 		echo "  Packaging $$dir..."; \
 		cargo run --bin vibe -- package $$dir/vibe.yaml -o build/demo/$$(basename $$dir).vibeapp; \
-		cargo run --bin vibe -- sign build/demo/$$(basename $$dir).vibeapp --key build/demo/demo-signing.key; \
+		cargo run --bin vibe -- sign build/demo/$$(basename $$dir).vibeapp --key build/dev/signing.key --embed-key; \
 	done
 	@echo "  Packaging examples/encrypted-notes (password-protected)..."
 	cargo run --bin vibe -- package examples/encrypted-notes/vibe.yaml \
@@ -81,30 +136,71 @@ demo-packages: build
 		--seed-data examples/encrypted-notes-seed \
 		--password demo1234
 	cargo run --bin vibe -- sign build/demo/encrypted-notes.vibeapp \
-		--key build/demo/demo-signing.key \
+		--key build/dev/signing.key \
 		--password demo1234
-	@echo "==> Copying public key to mac-host resources..."
-	cp build/demo/demo-signing.pub apps/mac-host/VibeHost/Resources/demo-signing.pub
-	@echo "==> Demo packages ready in build/demo/"
+	@echo "==> All demo packages ready in build/demo/"
 
-bundle-demos: demo-packages
-	@echo "==> Bundling demo apps into mac-host resources..."
-	cp build/demo/nodejs-todo.vibeapp build/demo/sqlite-notes.vibeapp build/demo/ws-chat.vibeapp \
-		apps/mac-host/VibeHost/Resources/
-	@echo "==> Demo apps bundled (nodejs-todo, sqlite-notes, ws-chat)"
-
+# demo-verify: Verify all dev demo packages against the local dev public key.
 demo-verify: demo-packages
-	@echo "==> Verifying demo packages..."
+	@echo "==> Verifying demo packages against dev key..."
 	@for pkg in build/demo/*.vibeapp; do \
 		if [ "$$(basename $$pkg)" = "encrypted-notes.vibeapp" ]; then \
 			echo "  Verifying $$pkg (encrypted)..."; \
-			cargo run --bin vibe -- verify $$pkg --key build/demo/demo-signing.pub --password demo1234; \
+			cargo run --bin vibe -- verify $$pkg --key build/dev/signing.pub --password demo1234; \
 		else \
 			echo "  Verifying $$pkg..."; \
-			cargo run --bin vibe -- verify $$pkg --key build/demo/demo-signing.pub; \
+			cargo run --bin vibe -- verify $$pkg --key build/dev/signing.pub; \
 		fi \
 	done
 	@echo "==> All demo packages verified."
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Bundled app packages  (signed with the official Vibe key)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# bundle-demos: Package and sign only the apps shipped inside the macOS bundle,
+# then copy them to Resources/. These must be signed with the official Vibe key
+# so they appear as "Verified" in the app without a trust prompt.
+#
+# Official key resolution (in order):
+#   1. signing/vibe-official.key  — git-ignored file; place the private key here
+#      for local use. See signing/README.md.
+#   2. VIBE_SIGNING_KEY env var   — base64-encoded 32-byte key; set via the
+#      GitHub Actions repository secret of the same name.
+#
+# Fails loudly if neither source is available.
+#
+# This target is intentionally independent of demo-packages.
+bundle-demos: build
+	@mkdir -p build/bundled
+	@if [ -f signing/vibe-official.key ]; then \
+		echo "==> Using signing/vibe-official.key..."; \
+		cp signing/vibe-official.key build/bundled/.signing.key; \
+	elif [ -n "$$VIBE_SIGNING_KEY" ]; then \
+		echo "==> Using VIBE_SIGNING_KEY env var..."; \
+		printf '%s' "$$VIBE_SIGNING_KEY" | base64 -d > build/bundled/.signing.key; \
+	else \
+		echo ""; \
+		echo "ERROR: No official signing key found."; \
+		echo ""; \
+		echo "  To sign bundled apps locally, place the private key at:"; \
+		echo "    signing/vibe-official.key"; \
+		echo ""; \
+		echo "  See signing/README.md for instructions."; \
+		echo ""; \
+		exit 1; \
+	fi
+	@echo "==> Packaging bundled apps (nodejs-todo, sqlite-notes, ws-chat)..."
+	@for dir in examples/nodejs-todo examples/sqlite-notes examples/ws-chat; do \
+		echo "  Packaging $$dir..."; \
+		cargo run --bin vibe -- package $$dir/vibe.yaml -o build/bundled/$$(basename $$dir).vibeapp; \
+		cargo run --bin vibe -- sign build/bundled/$$(basename $$dir).vibeapp --key build/bundled/.signing.key; \
+	done
+	@rm -f build/bundled/.signing.key
+	@echo "==> Copying bundled apps to mac-host resources..."
+	cp build/bundled/nodejs-todo.vibeapp build/bundled/sqlite-notes.vibeapp build/bundled/ws-chat.vibeapp \
+		apps/mac-host/VibeHost/Resources/
+	@echo "==> Bundled apps ready (Resources/ updated)."
 
 release-cli:
 	@echo "==> Building release CLI..."
@@ -158,4 +254,4 @@ acknowledgments:
 clean:
 	cargo clean
 	cd apps/mac-host && swift package clean
-	rm -rf build/demo
+	rm -rf build/demo build/dev build/bundled

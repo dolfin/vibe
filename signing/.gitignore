@@ -1,0 +1,3 @@
+# Private keys are never committed.
+# Place vibe-official.key here to sign bundled demos locally.
+*.key

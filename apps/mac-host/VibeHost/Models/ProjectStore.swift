@@ -38,10 +38,10 @@ final class ProjectStore {
         StorageManager.saveProjects(projects)
     }
 
-    /// Import a .vibeapp package from a file URL.
+    /// Import a .vibeapp package from pre-loaded (and pre-decrypted) data.
     @discardableResult
-    func importPackage(from url: URL) throws -> Project {
-        let pkg = try PackageExtractor.extract(from: url)
+    func importPackage(data: Data, from url: URL) throws -> Project {
+        let pkg = try PackageExtractor.extract(data: data)
 
         // Verify trust using the embedded key (TOFU) or the bundled Vibe root key as fallback.
         let trustResult = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: vibeOfficialPublicKey)
@@ -83,6 +83,13 @@ final class ProjectStore {
         projects.append(project)
         save()
         return project
+    }
+
+    /// Import a .vibeapp package from a file URL (unencrypted packages only).
+    @discardableResult
+    func importPackage(from url: URL) throws -> Project {
+        let data = try Data(contentsOf: url)
+        return try importPackage(data: data, from: url)
     }
 
     /// Ensure bundled demo apps are in the library with an up-to-date trust status.

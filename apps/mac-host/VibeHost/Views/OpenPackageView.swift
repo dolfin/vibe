@@ -11,11 +11,14 @@ struct OpenPackageView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var vibePackage: VibePackage?
-    @State private var trustStatus: TrustStatus = .unsigned
+    @State private var packageData: Data?
+    @State private var trustResult: PackageVerifier.TrustVerificationResult?
     @State private var capabilities: AppCapabilities?
     @State private var errorMessage: String?
     @State private var errorDetail: String?
     @State private var showErrorAlert = false
+
+    private var trustStatus: TrustStatus { trustResult?.status ?? .unsigned }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -79,6 +82,16 @@ struct OpenPackageView: View {
                     TrustBadge(status: trustStatus)
                 }
 
+                // TOFU prompt: shown when the publisher key is valid but not yet trusted.
+                if trustStatus == .newPublisher, let result = trustResult,
+                   let fingerprint = result.keyFingerprint {
+                    Divider()
+                    trustPrompt(
+                        publisherName: result.publisherName ?? pkg.appManifest.publisher?.name ?? "Unknown Publisher",
+                        fingerprint: fingerprint
+                    )
+                }
+
                 Divider()
 
                 // Capabilities
@@ -118,6 +131,56 @@ struct OpenPackageView: View {
         }
     }
 
+    private func trustPrompt(publisherName: String, fingerprint: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("New Publisher", systemImage: "questionmark.circle.fill")
+                .foregroundStyle(.orange)
+                .fontWeight(.medium)
+
+            Text("This app is signed by a publisher you haven't trusted before. The signature is cryptographically valid — the package hasn't been tampered with — but you haven't verified who owns this key.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Publisher")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text(publisherName)
+                        .font(.caption.weight(.medium))
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Key fingerprint")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text(PublisherTrustStore.shortFingerprint(from: fingerprint))
+                        .font(.system(.caption, design: .monospaced).weight(.medium))
+                }
+            }
+
+            Button {
+                PublisherTrustStore.shared.trust(fingerprint: fingerprint, publisherName: publisherName)
+                // Refresh trust status to .trustedByUser so the badge updates immediately.
+                if let result = trustResult {
+                    trustResult = PackageVerifier.TrustVerificationResult(
+                        status: .trustedByUser,
+                        publisherKeyData: result.publisherKeyData,
+                        publisherName: result.publisherName
+                    )
+                }
+            } label: {
+                Label("Trust Publisher", systemImage: "checkmark.shield")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.blue)
+            .controlSize(.small)
+        }
+        .padding(12)
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
     private func errorView(_ message: String) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -153,7 +216,7 @@ struct OpenPackageView: View {
                 importAndDismiss()
             }
             .keyboardShortcut(.defaultAction)
-            .disabled(vibePackage == nil || errorMessage != nil)
+            .disabled(vibePackage == nil || errorMessage != nil || trustStatus == .tampered)
         }
         .padding()
     }
@@ -161,14 +224,24 @@ struct OpenPackageView: View {
     private func loadPackage() async {
         logger.info("Loading package from: \(self.packageURL.path)")
         do {
-            let pkg = try PackageExtractor.extract(from: packageURL)
+            var data = try Data(contentsOf: packageURL)
+
+            if PackageDecryption.isEncrypted(data) {
+                logger.info("Package is encrypted, prompting for password")
+                guard let password = PackageDecryption.promptPassword(forPackage: packageURL.lastPathComponent) else {
+                    throw PackageDecryption.DecryptError.cancelled
+                }
+                data = try PackageDecryption.decrypt(data, password: password)
+            }
+
+            let pkg = try PackageExtractor.extract(data: data)
             logger.info("Extracted package: \(pkg.packageManifest.appId)")
-            let key = store.demoPublicKey
-            logger.info("Demo public key available: \(key != nil)")
-            self.trustStatus = PackageVerifier.verifyTrust(package: pkg, publicKey: key)
+            let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: store.vibeOfficialPublicKey)
+            logger.info("Trust status: \(result.status.rawValue)")
+            self.packageData = data
+            self.trustResult = result
             self.capabilities = AppCapabilities(from: pkg.appManifest)
             self.vibePackage = pkg
-            logger.info("Package loaded successfully")
         } catch {
             let detail = String(describing: error)
             logger.error("Package load FAILED: \(detail)")
@@ -180,7 +253,8 @@ struct OpenPackageView: View {
     private func importAndDismiss() {
         logger.info("Importing package from: \(self.packageURL.path)")
         do {
-            let project = try store.importPackage(from: packageURL)
+            guard let data = packageData else { return }
+            let project = try store.importPackage(data: data, from: packageURL)
             logger.info("Import succeeded: \(project.appName)")
             onImported(project)
             dismiss()

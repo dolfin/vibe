@@ -26,11 +26,13 @@ fn main() -> anyhow::Result<()> {
             key,
             password,
             password_file,
+            embed_key,
         } => commands::sign::run(
             &package,
             &key,
             password.as_deref(),
             password_file.as_deref(),
+            embed_key,
         ),
         Commands::Verify {
             package,

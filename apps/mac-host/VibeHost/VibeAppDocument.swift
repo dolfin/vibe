@@ -54,6 +54,12 @@ struct VibeAppDocument: FileDocument {
         let trustResult = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: demoKey)
         let cacheHash = try StorageManager.cachePackage(data: innerData)
 
+        // Cache the app icon so the library can display it regardless of how the file was opened.
+        if let iconPath = pkg.appManifest.icon,
+           let iconData = try? PackageExtractor.extractFile(named: iconPath, from: innerData) {
+            try? iconData.write(to: StorageManager.iconURL(for: cacheHash))
+        }
+
         // Seed state cache from whatever was in the file (preserves state across re-opens)
         if !stateEntries.isEmpty {
             StorageManager.saveState(stateEntries, for: cacheHash)

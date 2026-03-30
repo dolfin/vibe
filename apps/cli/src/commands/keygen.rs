@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::io::Write as _;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -15,16 +15,23 @@ pub fn run(output: &str) -> Result<()> {
     let key_path = format!("{}.key", output);
     let pub_path = format!("{}.pub", output);
 
-    // Don't overwrite existing keys
-    if Path::new(&key_path).exists() {
-        anyhow::bail!("Key file '{}' already exists", key_path);
+    // Use create_new(true) (O_CREAT|O_EXCL) for atomic file creation — this eliminates the
+    // TOCTOU race that exists when doing exists() + write() as two separate operations.
+    {
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&key_path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    anyhow::anyhow!("Key file '{}' already exists", key_path)
+                } else {
+                    anyhow::anyhow!("Failed to create '{}': {}", key_path, e)
+                }
+            })?;
+        f.write_all(&sk_bytes)
+            .with_context(|| format!("Failed to write signing key to '{}'", key_path))?;
     }
-    if Path::new(&pub_path).exists() {
-        anyhow::bail!("Public key file '{}' already exists", pub_path);
-    }
-
-    fs::write(&key_path, sk_bytes)
-        .with_context(|| format!("Failed to write signing key to '{}'", key_path))?;
     // Restrict private key to owner-read-only before anyone else can read it
     #[cfg(unix)]
     {
@@ -32,8 +39,21 @@ pub fn run(output: &str) -> Result<()> {
         std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600))
             .with_context(|| format!("Failed to set permissions on '{}'", key_path))?;
     }
-    fs::write(&pub_path, vk_bytes)
-        .with_context(|| format!("Failed to write verifying key to '{}'", pub_path))?;
+    {
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&pub_path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    anyhow::anyhow!("Public key file '{}' already exists", pub_path)
+                } else {
+                    anyhow::anyhow!("Failed to create '{}': {}", pub_path, e)
+                }
+            })?;
+        f.write_all(&vk_bytes)
+            .with_context(|| format!("Failed to write verifying key to '{}'", pub_path))?;
+    }
 
     // Print public key hex to stdout
     let pub_hex: String = vk_bytes.iter().map(|b| format!("{:02x}", b)).collect();

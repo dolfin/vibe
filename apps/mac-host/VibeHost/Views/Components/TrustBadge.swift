@@ -12,28 +12,31 @@ struct TrustBadge: View {
 
     private var icon: String {
         switch status {
-        case .verified: "checkmark.seal.fill"
-        case .signed: "seal.fill"
-        case .unsigned: "exclamationmark.triangle.fill"
-        case .tampered: "xmark.seal.fill"
+        case .verified:      "checkmark.seal.fill"
+        case .trustedByUser: "person.badge.shield.checkmark.fill"
+        case .newPublisher:  "questionmark.circle.fill"
+        case .unsigned:      "exclamationmark.triangle.fill"
+        case .tampered:      "xmark.seal.fill"
         }
     }
 
     private var color: Color {
         switch status {
-        case .verified: .green
-        case .signed: .blue
-        case .unsigned: .yellow
-        case .tampered: .red
+        case .verified:      .green
+        case .trustedByUser: .blue
+        case .newPublisher:  .orange
+        case .unsigned:      .yellow
+        case .tampered:      .red
         }
     }
 
     private var label: String {
         switch status {
-        case .verified: "Verified"
-        case .signed: "Signed"
-        case .unsigned: "Unsigned"
-        case .tampered: "Tampered"
+        case .verified:      "Verified"
+        case .trustedByUser: "Trusted"
+        case .newPublisher:  "New Publisher"
+        case .unsigned:      "Unsigned"
+        case .tampered:      "Tampered"
         }
     }
 }

@@ -40,6 +40,9 @@ pub enum ValidationError {
     #[error("field '{field}' exceeds maximum length of {max} characters")]
     FieldTooLong { field: String, max: usize },
 
+    #[error("mount target must be an absolute path in {field}: {path}")]
+    MountTargetNotAbsolute { field: String, path: String },
+
     #[error("invalid image name in service '{service}': {reason}")]
     InvalidImage { service: String, reason: String },
 
@@ -126,7 +129,12 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), Vec<ValidationError>
 
     // Validate icon path
     if let Some(ref icon) = manifest.icon {
-        if icon.contains("..") {
+        // Use Path::components() instead of string matching to correctly detect `..`
+        // regardless of Unicode normalization variants (NFD/NFC) or redundant separators.
+        if std::path::Path::new(icon)
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+        {
             errors.push(ValidationError::PathTraversal {
                 field: "icon".into(),
                 path: icon.clone(),
@@ -256,13 +264,25 @@ pub fn validate_manifest(manifest: &Manifest) -> Result<(), Vec<ValidationError>
                         field: format!("service '{}' mount source", svc.name),
                         path: mount.source.clone(),
                     });
-                } else if mount.source.contains("..") {
+                } else if std::path::Path::new(&mount.source)
+                    .components()
+                    .any(|c| c == std::path::Component::ParentDir)
+                {
                     errors.push(ValidationError::PathTraversal {
                         field: format!("service '{}' mount source", svc.name),
                         path: mount.source.clone(),
                     });
                 }
-                if mount.target.contains("..") {
+                // Mount target is a container-side path and must be absolute.
+                if !mount.target.starts_with('/') {
+                    errors.push(ValidationError::MountTargetNotAbsolute {
+                        field: format!("service '{}' mount target", svc.name),
+                        path: mount.target.clone(),
+                    });
+                } else if std::path::Path::new(&mount.target)
+                    .components()
+                    .any(|c| c == std::path::Component::ParentDir)
+                {
                     errors.push(ValidationError::PathTraversal {
                         field: format!("service '{}' mount target", svc.name),
                         path: mount.target.clone(),

@@ -40,8 +40,8 @@ final class VibeHostTests: XCTestCase {
             signature: nil,
             archiveData: Data()
         )
-        let status = PackageVerifier.verifyTrust(package: pkg, publicKey: nil)
-        XCTAssertEqual(status, .unsigned)
+        let result = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: nil)
+        XCTAssertEqual(result.status, .unsigned)
     }
 
     // MARK: - Decode real demo package JSON

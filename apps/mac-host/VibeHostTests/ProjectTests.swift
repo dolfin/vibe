@@ -107,7 +107,7 @@ final class ProjectTests: XCTestCase {
     }
 
     func testAllTrustStatuses() throws {
-        for status in [TrustStatus.unsigned, .signed, .verified, .tampered] {
+        for status in [TrustStatus.unsigned, .newPublisher, .trustedByUser, .verified, .tampered] {
             var project = makeProject()
             project.trustStatus = status
             let data = try JSONEncoder().encode(project)

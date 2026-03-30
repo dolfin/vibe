@@ -7,14 +7,16 @@ final class TrustStatusTests: XCTestCase {
 
     func testRawValues() {
         XCTAssertEqual(TrustStatus.unsigned.rawValue, "unsigned")
-        XCTAssertEqual(TrustStatus.signed.rawValue, "signed")
+        XCTAssertEqual(TrustStatus.newPublisher.rawValue, "newPublisher")
+        XCTAssertEqual(TrustStatus.trustedByUser.rawValue, "trustedByUser")
         XCTAssertEqual(TrustStatus.verified.rawValue, "verified")
         XCTAssertEqual(TrustStatus.tampered.rawValue, "tampered")
     }
 
     func testInitFromRawValueAllCases() {
         XCTAssertEqual(TrustStatus(rawValue: "unsigned"), .unsigned)
-        XCTAssertEqual(TrustStatus(rawValue: "signed"), .signed)
+        XCTAssertEqual(TrustStatus(rawValue: "newPublisher"), .newPublisher)
+        XCTAssertEqual(TrustStatus(rawValue: "trustedByUser"), .trustedByUser)
         XCTAssertEqual(TrustStatus(rawValue: "verified"), .verified)
         XCTAssertEqual(TrustStatus(rawValue: "tampered"), .tampered)
     }
@@ -22,11 +24,12 @@ final class TrustStatusTests: XCTestCase {
     func testInitFromInvalidRawValueReturnsNil() {
         XCTAssertNil(TrustStatus(rawValue: "unknown"))
         XCTAssertNil(TrustStatus(rawValue: "VERIFIED"))
+        XCTAssertNil(TrustStatus(rawValue: "signed"))  // removed case
         XCTAssertNil(TrustStatus(rawValue: ""))
     }
 
     func testCodableRoundTripAllCases() throws {
-        let statuses: [TrustStatus] = [.unsigned, .signed, .verified, .tampered]
+        let statuses: [TrustStatus] = [.unsigned, .newPublisher, .trustedByUser, .verified, .tampered]
         for status in statuses {
             let data = try JSONEncoder().encode(status)
             let decoded = try JSONDecoder().decode(TrustStatus.self, from: data)
@@ -37,7 +40,8 @@ final class TrustStatusTests: XCTestCase {
     func testDecodesFromJSONString() throws {
         let cases: [(String, TrustStatus)] = [
             ("\"unsigned\"", .unsigned),
-            ("\"signed\"", .signed),
+            ("\"newPublisher\"", .newPublisher),
+            ("\"trustedByUser\"", .trustedByUser),
             ("\"verified\"", .verified),
             ("\"tampered\"", .tampered),
         ]
