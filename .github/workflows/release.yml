@@ -12,6 +12,7 @@ on:
 
 env:
   VERSION: ${{ github.event.inputs.tag || github.ref_name }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── Tests ──────────────────────────────────────────────────────────────────
@@ -20,7 +21,7 @@ jobs:
     name: Test (Rust)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -28,7 +29,7 @@ jobs:
           components: clippy, rustfmt
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -49,10 +50,10 @@ jobs:
       run:
         working-directory: apps/mac-host
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Cache Swift packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: apps/mac-host/.build
           key: ${{ runner.os }}-swift-${{ hashFiles('apps/mac-host/Package.resolved') }}
@@ -81,7 +82,7 @@ jobs:
             artifact: vibe-x86_64-unknown-linux-gnu
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -89,7 +90,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -105,7 +106,7 @@ jobs:
         run: cp target/${{ matrix.target }}/release/vibe vibe
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: vibe
@@ -118,13 +119,13 @@ jobs:
     runs-on: macos-15
     steps:
       - name: Download arm64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: vibe-aarch64-apple-darwin
           path: bin-arm64
 
       - name: Download x86_64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: vibe-x86_64-apple-darwin
           path: bin-x86_64
@@ -144,7 +145,7 @@ jobs:
           tar czf "vibe-${VERSION}-macos-universal.tar.gz" vibe
 
       - name: Upload universal tarball artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vibe-macos-universal
           path: "vibe-*-macos-universal.tar.gz"
@@ -157,7 +158,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download Linux binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: vibe-x86_64-unknown-linux-gnu
           path: bin-linux
@@ -171,7 +172,7 @@ jobs:
           tar czf "vibe-${VERSION}-linux-x86_64.tar.gz" vibe
 
       - name: Upload Linux tarball artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vibe-linux-x86_64
           path: "vibe-*-linux-x86_64.tar.gz"
@@ -186,10 +187,10 @@ jobs:
       KEYCHAIN_NAME: release.keychain
       KEYCHAIN_PASSWORD: ci-temp-keychain
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Cache Swift packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: apps/mac-host/.build
           key: ${{ runner.os }}-swift-${{ hashFiles('apps/mac-host/Package.resolved') }}
@@ -303,13 +304,13 @@ jobs:
           EOF
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Vibe-dmg
           path: "${{ runner.temp }}/Vibe-*.dmg"
 
       - name: Upload appcast artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: appcast
           path: appcast.xml
@@ -327,12 +328,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -379,13 +380,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download universal CLI tarball
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: vibe-macos-universal
           path: artifacts
 
       - name: Download Linux CLI tarball
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: vibe-linux-x86_64
           path: artifacts
@@ -400,7 +401,7 @@ jobs:
           echo "LINUX_SHA256=${LINUX_SHA256}" >> "$GITHUB_ENV"
 
       - name: Checkout homebrew tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: dolfin/homebrew-vibe
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
