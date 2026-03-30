@@ -49,9 +49,9 @@ struct VibeAppDocument: FileDocument {
         let stateEntries = PackageExtractor.extractStateEntries(from: innerData)
 
         let pkg = try PackageExtractor.extract(data: innerData)
-        let demoKey = Bundle.main.url(forResource: "demo-signing", withExtension: "pub")
+        let demoKey = Bundle.main.url(forResource: "vibe-official", withExtension: "pub")
             .flatMap { try? Data(contentsOf: $0) }
-        let trust = PackageVerifier.verifyTrust(package: pkg, publicKey: demoKey)
+        let trustResult = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: demoKey)
         let cacheHash = try StorageManager.cachePackage(data: innerData)
 
         // Seed state cache from whatever was in the file (preserves state across re-opens)
@@ -67,7 +67,7 @@ struct VibeAppDocument: FileDocument {
             appName: pkg.appManifest.name ?? pkg.packageManifest.appId,
             appVersion: pkg.packageManifest.appVersion,
             publisher: pkg.appManifest.publisher?.name,
-            trustStatus: trust,
+            trustStatus: trustResult.status,
             capabilities: AppCapabilities(from: pkg.appManifest),
             packageHash: cacheHash,
             importedAt: Date(),
@@ -76,7 +76,8 @@ struct VibeAppDocument: FileDocument {
             files: pkg.packageManifest.files,
             formatVersion: pkg.packageManifest.formatVersion,
             createdAt: pkg.packageManifest.createdAt,
-            isEncrypted: ctx != nil
+            isEncrypted: ctx != nil,
+            publisherKeyFingerprint: trustResult.keyFingerprint
         )
     }
 

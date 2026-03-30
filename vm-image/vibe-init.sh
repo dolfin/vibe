@@ -171,6 +171,31 @@ cat > /etc/cni/net.d/10-vibe.conflist << 'CNI'
   ]
 }
 CNI
+
+# Pre-create the nerdctl default network config so nerdctl does not auto-generate
+# it with the hardcoded 10.4.0.0/24 subnet (which can conflict with Docker or
+# other tools on the host). We use 10.89.0.0/24 which is unlikely to overlap.
+cat > /etc/cni/net.d/00-nerdctl-default.conflist << 'CNI'
+{
+  "cniVersion": "1.0.0",
+  "name": "nerdctl",
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "nerdctl0",
+      "isGateway": true,
+      "ipMasq": true,
+      "ipam": {
+        "type": "host-local",
+        "subnet": "10.89.0.0/24",
+        "routes": [{"dst": "0.0.0.0/0"}]
+      }
+    },
+    {"type": "portmap", "capabilities": {"portMappings": true}},
+    {"type": "firewall"}
+  ]
+}
+CNI
 stage "cni"
 
 # ── vibe user ────────────────────────────────────────────────────────────────

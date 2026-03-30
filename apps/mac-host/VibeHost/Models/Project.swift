@@ -30,13 +30,18 @@ struct Project: Identifiable, Codable, Equatable {
     /// True when the package was encrypted with a password at open time.
     let isEncrypted: Bool
 
-    // MARK: - Codable (custom init for backwards-compat; isEncrypted defaults to false)
+    /// Full SHA-256 hex fingerprint of the publisher's Ed25519 public key.
+    /// Present when the package carries a signature (verified, trusted, or new publisher).
+    /// Used by the TOFU trust prompt to identify and persist publisher trust decisions.
+    var publisherKeyFingerprint: String?
+
+    // MARK: - Codable (custom init for backwards-compat; new fields default to nil/false)
 
     enum CodingKeys: String, CodingKey {
         case id, appId, appName, appVersion, publisher, trustStatus
         case capabilities, packageHash, importedAt, packageCachePath
         case originalPackagePath, files, formatVersion, createdAt, isEncrypted
-        case isFavorite, lastOpenedAt
+        case isFavorite, lastOpenedAt, publisherKeyFingerprint
     }
 
     init(from decoder: Decoder) throws {
@@ -58,6 +63,7 @@ struct Project: Identifiable, Codable, Equatable {
         isEncrypted = try c.decodeIfPresent(Bool.self, forKey: .isEncrypted) ?? false
         isFavorite = try c.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
         lastOpenedAt = try c.decodeIfPresent(Date.self, forKey: .lastOpenedAt)
+        publisherKeyFingerprint = try c.decodeIfPresent(String.self, forKey: .publisherKeyFingerprint)
     }
 
     // Memberwise initialiser (compiler won't synthesise one once init(from:) is defined).
@@ -78,7 +84,8 @@ struct Project: Identifiable, Codable, Equatable {
         createdAt: String,
         isEncrypted: Bool = false,
         isFavorite: Bool = false,
-        lastOpenedAt: Date? = nil
+        lastOpenedAt: Date? = nil,
+        publisherKeyFingerprint: String? = nil
     ) {
         self.id = id
         self.appId = appId
@@ -97,5 +104,6 @@ struct Project: Identifiable, Codable, Equatable {
         self.isEncrypted = isEncrypted
         self.isFavorite = isFavorite
         self.lastOpenedAt = lastOpenedAt
+        self.publisherKeyFingerprint = publisherKeyFingerprint
     }
 }

@@ -7,9 +7,11 @@ import Observation
 final class ProjectStore {
     var projects: [Project] = []
 
-    /// Bundled demo public key for verifying example packages.
-    var demoPublicKey: Data? {
-        guard let url = Bundle.main.url(forResource: "demo-signing", withExtension: "pub") else {
+    /// The official Vibe signing public key, bundled in the app.
+    /// Packages signed with the corresponding private key (stored as the VIBE_SIGNING_KEY
+    /// repo secret) are classified as `.verified` without any user prompt.
+    var vibeOfficialPublicKey: Data? {
+        guard let url = Bundle.main.url(forResource: "vibe-official", withExtension: "pub") else {
             return nil
         }
         return try? Data(contentsOf: url)
@@ -38,14 +40,11 @@ final class ProjectStore {
 
     /// Import a .vibeapp package from a file URL.
     @discardableResult
-    func importPackage(from url: URL, publicKey: Data? = nil) throws -> Project {
+    func importPackage(from url: URL) throws -> Project {
         let pkg = try PackageExtractor.extract(from: url)
 
-        // Determine the public key to use
-        let keyToUse = publicKey ?? demoPublicKey
-
-        // Verify trust
-        let trustStatus = PackageVerifier.verifyTrust(package: pkg, publicKey: keyToUse)
+        // Verify trust using the embedded key (TOFU) or the bundled Vibe root key as fallback.
+        let trustResult = PackageVerifier.verifyTrust(package: pkg, vibeRootKey: vibeOfficialPublicKey)
 
         // Cache the package
         let cacheHash = try StorageManager.cachePackage(data: pkg.archiveData)
@@ -68,8 +67,8 @@ final class ProjectStore {
             appId: pkg.packageManifest.appId,
             appName: pkg.appManifest.name ?? pkg.packageManifest.appId,
             appVersion: pkg.packageManifest.appVersion,
-            publisher: pkg.appManifest.publisher?.name,
-            trustStatus: trustStatus,
+            publisher: trustResult.publisherName,
+            trustStatus: trustResult.status,
             capabilities: capabilities,
             packageHash: packageHashHex,
             importedAt: Date(),
@@ -77,7 +76,8 @@ final class ProjectStore {
             originalPackagePath: url.path,
             files: pkg.packageManifest.files,
             formatVersion: pkg.packageManifest.formatVersion,
-            createdAt: pkg.packageManifest.createdAt
+            createdAt: pkg.packageManifest.createdAt,
+            publisherKeyFingerprint: trustResult.keyFingerprint
         )
 
         projects.append(project)
@@ -85,24 +85,60 @@ final class ProjectStore {
         return project
     }
 
-    /// Auto-import bundled demo apps, replacing any existing entries with the same appId.
+    /// Ensure bundled demo apps are in the library with an up-to-date trust status.
+    ///
+    /// Called on every launch. Always re-imports each demo via importPackage so that
+    /// the library's packageCachePath always matches what the document will compute —
+    /// avoiding duplicate entries when the manifest changes (e.g. after key rotation
+    /// with --embed-key). The cached file is then force-overwritten with the current
+    /// bundle bytes to handle the case where only the signature changed (same manifest
+    /// hash, different _vibe_signature.sig). Finally the file is locked (isUserImmutable)
+    /// so macOS shows a native padlock in the document title bar.
     private func importDemoAppsIfNeeded() {
-        let key = "vibe.demosImported.v3"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        // Remove any existing demo entries so fresh imports take precedence in favorites.
-        let demoIds: Set<String> = ["com.example.nodejs-todo", "com.example.sqlite-notes", "com.example.ws-chat"]
-        projects.removeAll { demoIds.contains($0.appId) }
-        let demos = ["nodejs-todo", "sqlite-notes", "ws-chat"]
-        for name in demos {
-            guard let url = Bundle.main.url(forResource: name, withExtension: "vibeapp") else { continue }
-            try? importPackage(from: url)
-            // Mark the just-added demo project as a favorite.
-            if let idx = projects.firstIndex(where: { $0.originalPackagePath == url.path }) {
-                projects[idx].isFavorite = true
-            }
+        let demoSpecs: [(resource: String, appId: String)] = [
+            ("nodejs-todo",    "com.example.nodejs-todo"),
+            ("sqlite-notes",   "com.example.sqlite-notes"),
+            ("ws-chat",        "com.example.ws-chat"),
+        ]
+
+        var needsSave = false
+
+        for spec in demoSpecs {
+            guard let url = Bundle.main.url(forResource: spec.resource, withExtension: "vibeapp"),
+                  let data = try? Data(contentsOf: url) else { continue }
+
+            // Preserve user-facing state from any existing library entry.
+            let existing = projects.first(where: { $0.appId == spec.appId })
+            let savedFavorite   = existing?.isFavorite   ?? true   // default true for new demos
+            let savedLastOpened = existing?.lastOpenedAt
+
+            // Remove the stale entry and re-import — this ensures packageCachePath always
+            // reflects the current bundle manifest, preventing duplicate library entries
+            // when the manifest changes between builds.
+            projects.removeAll { $0.appId == spec.appId }
+            guard (try? importPackage(from: url)) != nil,
+                  let idx = projects.firstIndex(where: { $0.appId == spec.appId }) else { continue }
+
+            projects[idx].isFavorite   = savedFavorite
+            projects[idx].lastOpenedAt = savedLastOpened
+            needsSave = true
+
+            // Force-overwrite the cached file with the current bundle bytes. importPackage
+            // calls cachePackage which skips writing if the file already exists — but the
+            // existing file may carry a stale signature (same manifest hash, new key).
+            var archivePath = StorageManager.packageCacheDir
+                .appendingPathComponent(projects[idx].packageCachePath, isDirectory: true)
+                .appendingPathComponent("package.vibeapp")
+            var unlock = URLResourceValues(); unlock.isUserImmutable = false
+            try? archivePath.setResourceValues(unlock)
+            try? data.write(to: archivePath)
+
+            // Lock the file — macOS shows a native padlock + Duplicate action.
+            var lock = URLResourceValues(); lock.isUserImmutable = true
+            try? archivePath.setResourceValues(lock)
         }
-        save()
-        UserDefaults.standard.set(true, forKey: key)
+
+        if needsSave { save() }
     }
 
     /// Called when any document window opens — adds the project to the library if missing,

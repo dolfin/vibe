@@ -25,11 +25,12 @@ struct DocumentWindowView: View {
     @State private var infoWindowController: NSWindowController?
 
     private enum ActiveSheet: Identifiable {
-        case secrets, trustWarning
+        case secrets, trustWarning, trustPublisher
         var id: String {
             switch self {
             case .secrets: "secrets"
             case .trustWarning: "trustWarning"
+            case .trustPublisher: "trustPublisher"
             }
         }
     }
@@ -99,6 +100,13 @@ struct DocumentWindowView: View {
                     TrustWarningSheet(
                         trustStatus: project.trustStatus,
                         appName: project.appName,
+                        onProceed: {
+                            Task { await proceedWithLaunch() }
+                        }
+                    )
+                case .trustPublisher:
+                    TrustPublisherSheet(
+                        project: project,
                         onProceed: {
                             Task { await proceedWithLaunch() }
                         }
@@ -234,12 +242,15 @@ struct DocumentWindowView: View {
     private func launchCurrentProject() async {
         guard !project.packageCachePath.isEmpty else { return }
 
-        // Block tampered packages entirely; prompt for unsigned packages
+        // Route to the appropriate trust UI before launching.
         switch project.trustStatus {
         case .tampered, .unsigned:
             activeSheet = .trustWarning
             return
-        case .verified, .signed:
+        case .newPublisher:
+            activeSheet = .trustPublisher
+            return
+        case .verified, .trustedByUser:
             break
         }
 
@@ -849,6 +860,68 @@ extension FocusedValues {
     var vibeDocumentContext: VibeDocumentContext? {
         get { self[VibeDocumentContextKey.self] }
         set { self[VibeDocumentContextKey.self] = newValue }
+    }
+}
+
+// MARK: - Trust Publisher Sheet (TOFU)
+
+/// Shown when a package is signed by a valid key that the user hasn't trusted yet.
+private struct TrustPublisherSheet: View {
+    let project: Project
+    let onProceed: (() -> Void)?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "questionmark.shield.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.orange)
+
+            Text("New Publisher")
+                .font(.title2.weight(.semibold))
+
+            Text("\"\(project.appName)\" is signed by a publisher you haven't trusted before. The signature is cryptographically valid \u{2014} the package hasn't been tampered with \u{2014} but you haven't verified who controls this key.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 360)
+
+            if let fingerprint = project.publisherKeyFingerprint {
+                VStack(spacing: 4) {
+                    Text(project.publisher ?? "Unknown Publisher")
+                        .font(.subheadline.weight(.medium))
+                    Text(PublisherTrustStore.shortFingerprint(from: fingerprint))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
+            }
+
+            Divider()
+
+            HStack(spacing: 12) {
+                Button("Open Once") {
+                    dismiss()
+                    onProceed?()
+                }
+                .help("Run this time without saving trust. You'll be prompted again next time.")
+
+                Button("Trust Publisher") {
+                    if let fingerprint = project.publisherKeyFingerprint {
+                        PublisherTrustStore.shared.trust(
+                            fingerprint: fingerprint,
+                            publisherName: project.publisher ?? "Unknown Publisher"
+                        )
+                    }
+                    dismiss()
+                    onProceed?()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return)
+                .help("Remember this publisher's key and trust future packages from them automatically.")
+            }
+        }
+        .padding(28)
+        .frame(minWidth: 400)
     }
 }
 
