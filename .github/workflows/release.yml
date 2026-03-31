@@ -273,7 +273,7 @@ jobs:
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
-          echo "$SPARKLE_PRIVATE_KEY" | base64 -d > sparkle_private_key
+          echo "$SPARKLE_PRIVATE_KEY" > sparkle_private_key
           SPARKLE_SIG=$(./sparkle/bin/sign_update "$DMG_PATH" --ed-key-file sparkle_private_key)
           rm -f sparkle_private_key
           echo "SPARKLE_SIG=${SPARKLE_SIG}" >> "$GITHUB_ENV"
