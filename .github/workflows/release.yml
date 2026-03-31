@@ -304,11 +304,11 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           echo "$SPARKLE_PRIVATE_KEY" > sparkle_private_key
-          SPARKLE_SIG=$(./sparkle/bin/sign_update "$DMG_PATH" --ed-key-file sparkle_private_key)
+          # sign_update outputs the ready-to-use XML attributes:
+          #   sparkle:edSignature="..." length="..."
+          SPARKLE_ATTRS=$(./sparkle/bin/sign_update "$DMG_PATH" --ed-key-file sparkle_private_key)
           rm -f sparkle_private_key
-          echo "SPARKLE_SIG=${SPARKLE_SIG}" >> "$GITHUB_ENV"
-          DMG_SIZE=$(wc -c < "$DMG_PATH" | tr -d ' ')
-          echo "DMG_SIZE=${DMG_SIZE}" >> "$GITHUB_ENV"
+          echo "SPARKLE_ATTRS=${SPARKLE_ATTRS}" >> "$GITHUB_ENV"
 
       - name: Generate appcast.xml
         run: |
@@ -329,8 +329,7 @@ jobs:
                 <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
                 <enclosure
                   url="${DMG_URL}"
-                  sparkle:edSignature="${SPARKLE_SIG}"
-                  length="${DMG_SIZE}"
+                  ${SPARKLE_ATTRS}
                   type="application/octet-stream"/>
               </item>
             </channel>

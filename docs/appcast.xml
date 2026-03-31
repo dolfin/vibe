@@ -11,7 +11,7 @@
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <enclosure
         url="https://github.com/dolfin/vibe/releases/download/v0.1.11/Vibe-0.1.11.dmg"
-        sparkle:edSignature="sparkle:edSignature="Bcm6e/HaD2NIft0G/zF3opmqTTCsnEYNszn2pNJc0JLLAZHFnBzgGIgG7Wx7Ri8Fb5mqsM+Kq6zI4l2Hpv/vAQ==" length="24993293""
+        sparkle:edSignature="Bcm6e/HaD2NIft0G/zF3opmqTTCsnEYNszn2pNJc0JLLAZHFnBzgGIgG7Wx7Ri8Fb5mqsM+Kq6zI4l2Hpv/vAQ=="
         length="24993293"
         type="application/octet-stream"/>
     </item>
