@@ -11,6 +11,7 @@ extension UTType {
 @main
 struct VibeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.openWindow) private var openWindow
     @State private var projectStore = ProjectStore()
     @State private var vaultStore = VaultStore()
     private let updaterController = SPUStandardUpdaterController(
@@ -32,7 +33,7 @@ struct VibeApp: App {
         // the Save action can update rawPackageData and macOS writes it to disk.
         DocumentGroup(newDocument: VibeAppDocument()) { file in
             DocumentWindowView(document: file.$document, fileURL: file.fileURL)
-                .background(LibraryOpener(appDelegate: appDelegate))
+                .onAppear { appDelegate.openLibrary = { openWindow(id: "library") } }
         }
         .environment(vaultStore)
         .environment(projectStore)
@@ -130,22 +131,6 @@ private struct LibraryWindowRoot: View {
     }
 }
 
-// MARK: - Library Opener (first-launch)
-
-/// Wires the openWindow action into AppDelegate so the library can be opened on first launch.
-/// Injected as a background on the DocumentGroup content view.
-private struct LibraryOpener: View {
-    let appDelegate: AppDelegate
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        Color.clear
-            .onAppear {
-                appDelegate.requestLibraryOpen = { openWindow(id: "library") }
-            }
-    }
-}
-
 // MARK: - New Item Commands
 
 struct NewItemCommands: Commands {
@@ -214,7 +199,8 @@ struct HelpCommands: Commands {
 
 // MARK: - App Delegate
 
-/// Manages the Developer menu's Option-key visibility and first-launch library opening.
+/// Manages the Developer menu's Option-key visibility and library opening on launch.
+@Observable
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var localMonitor: Any?
     private var globalMonitor: Any?
@@ -222,11 +208,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set to true if the app was launched by opening a .vibeapp file.
     private(set) var openedViaFile = false
 
-    /// Wired by LibraryOpener once a DocumentGroup window is in the hierarchy.
-    var requestLibraryOpen: (() -> Void)?
+    /// Wired by VibeApp.body once the SwiftUI environment is available.
+    var openLibrary: (() -> Void)?
 
     func application(_ application: NSApplication, open urls: [URL]) {
         openedViaFile = true
+    }
+
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        false
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -236,13 +226,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         installMonitors()
 
-        // Open library on very first launch if not triggered by a file open.
+        // Open library on launch whenever the app wasn't triggered by a file open.
         DispatchQueue.main.async {
-            let seen = UserDefaults.standard.bool(forKey: "vibe.hasLaunchedBefore")
-            if !seen && !self.openedViaFile {
-                self.requestLibraryOpen?()
+            if !self.openedViaFile {
+                self.openLibrary?()
             }
-            UserDefaults.standard.set(true, forKey: "vibe.hasLaunchedBefore")
         }
     }
 
