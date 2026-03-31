@@ -223,9 +223,10 @@ jobs:
             -scheme Vibe \
             -configuration Release \
             -archivePath "$RUNNER_TEMP/Vibe.xcarchive" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
+            PROVISIONING_PROFILE_SPECIFIER="" \
             OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_NAME"
 
       - name: Export archive
