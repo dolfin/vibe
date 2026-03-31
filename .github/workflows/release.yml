@@ -415,21 +415,29 @@ jobs:
           echo "MACOS_SHA256=${MACOS_SHA256}" >> "$GITHUB_ENV"
           echo "LINUX_SHA256=${LINUX_SHA256}" >> "$GITHUB_ENV"
 
-      - name: Checkout homebrew tap
-        uses: actions/checkout@v6
-        with:
-          repository: dolfin/homebrew-vibe
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: homebrew-vibe
-
-      - name: Update Formula
+      - name: Push formula to homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           TAG="${{ github.ref_name }}"
           VERSION="${TAG#v}"
           MACOS_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/vibe-${VERSION}-macos-universal.tar.gz"
           LINUX_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/vibe-${VERSION}-linux-x86_64.tar.gz"
 
-          cat > homebrew-vibe/Formula/vibe.rb <<EOF
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/dolfin/homebrew-vibe.git" homebrew-vibe || {
+            mkdir homebrew-vibe
+            cd homebrew-vibe
+            git init
+            git remote add origin "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/dolfin/homebrew-vibe.git"
+            cd ..
+          }
+
+          cd homebrew-vibe
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          mkdir -p Formula
+          cat > Formula/vibe.rb <<EOF
           class Vibe < Formula
             desc "CLI for packaging, signing, and managing Vibe apps"
             homepage "https://github.com/dolfin/vibe"
@@ -455,11 +463,6 @@ jobs:
           end
           EOF
 
-      - name: Commit and push formula
-        run: |
-          cd homebrew-vibe
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/vibe.rb
-          git commit -m "vibe ${{ github.ref_name }}"
-          git push
+          git commit -m "vibe ${TAG}"
+          git push origin HEAD:main
