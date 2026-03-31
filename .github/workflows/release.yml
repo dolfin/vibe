@@ -236,15 +236,24 @@ jobs:
             -exportOptionsPlist apps/mac-host/ExportOptions.plist \
             -exportPath "$RUNNER_TEMP/export"
 
+      - name: Install create-dmg
+        run: brew install create-dmg
+
       - name: Create DMG
         run: |
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
-          hdiutil create \
-            -volname "Vibe" \
-            -srcfolder "$RUNNER_TEMP/export/Vibe.app" \
-            -ov -format UDZO \
-            "$RUNNER_TEMP/Vibe-${VERSION}.dmg"
+          create-dmg \
+            --volname "Vibe" \
+            --background "apps/mac-host/dmg-assets/background.png" \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 120 \
+            --icon "Vibe.app" 180 160 \
+            --app-drop-link 480 160 \
+            --no-internet-enable \
+            "$RUNNER_TEMP/Vibe-${VERSION}.dmg" \
+            "$RUNNER_TEMP/export/Vibe.app"
           echo "DMG_PATH=$RUNNER_TEMP/Vibe-${VERSION}.dmg" >> "$GITHUB_ENV"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
