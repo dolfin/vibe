@@ -369,9 +369,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           APPCAST=$(find artifacts/appcast -name "appcast.xml" | head -1)
-          cp "$APPCAST" docs/appcast.xml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout origin/main
+          cp "$APPCAST" docs/appcast.xml
           git add docs/appcast.xml
           git commit -m "chore: update appcast.xml for ${{ github.ref_name }}"
           git push origin HEAD:main
