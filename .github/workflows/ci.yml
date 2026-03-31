@@ -76,8 +76,11 @@ jobs:
     name: Bump Version
     needs: [rust, swift]
     # Only runs on direct pushes to main, not on PRs.
-    # The commit this job creates carries [skip ci] so it doesn't re-trigger CI.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Skips bump commits themselves to avoid an infinite bump loop.
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      !startsWith(github.event.head_commit.message, 'chore: bump version')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -130,5 +133,5 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Cargo.toml Cargo.lock apps/mac-host/VibeHost.xcodeproj/project.pbxproj
-          git commit -m "chore: bump version to ${{ steps.ver.outputs.new }} [skip ci]"
+          git commit -m "chore: bump version to ${{ steps.ver.outputs.new }}"
           git push origin main
