@@ -196,6 +196,27 @@ jobs:
           key: ${{ runner.os }}-swift-${{ hashFiles('apps/mac-host/Package.resolved') }}
           restore-keys: ${{ runner.os }}-swift-
 
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Bundle VM image (kernel + initrd)
+        run: make bundle-vm
+
+      - name: Bundle and sign demo apps
+        env:
+          VIBE_SIGNING_KEY: ${{ secrets.VIBE_SIGNING_KEY }}
+        run: make bundle-demos
+
       - name: Import Developer ID certificate
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
