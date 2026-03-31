@@ -1,7 +1,5 @@
 # Vibe
 
-<img src="website/logo.png" alt="Vibe" width="120" />
-
 [![CI](https://github.com/dolfin/vibe/actions/workflows/ci.yml/badge.svg)](https://github.com/dolfin/vibe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
