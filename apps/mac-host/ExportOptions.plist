@@ -6,10 +6,6 @@
     <string>developer-id</string>
     <key>teamID</key>
     <string>2DYWG55784</string>
-    <key>signingStyle</key>
-    <string>manual</string>
-    <key>signingCertificate</key>
-    <string>Developer ID Application</string>
     <key>destination</key>
     <string>export</string>
 </dict>
