@@ -25,6 +25,8 @@
 	</array>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://dolfin.github.io/vibe/appcast.xml</string>
 	<key>SUPublicEDKey</key>

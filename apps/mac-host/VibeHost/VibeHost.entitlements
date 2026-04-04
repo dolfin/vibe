@@ -12,5 +12,10 @@
 	<true/>
 	<key>com.apple.security.virtualization</key>
 	<true/>
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>app.dotvibe.Vibe-spks</string>
+		<string>app.dotvibe.Vibe-spki</string>
+	</array>
 </dict>
 </plist>
