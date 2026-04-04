@@ -395,8 +395,8 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::test_helpers::{
-        assert_zip_contains, assert_zip_not_contains, read_zip_entry, write_minimal_project,
-        write_password_file,
+        assert_zip_contains, assert_zip_not_contains, random_test_password, read_zip_entry,
+        write_minimal_project, write_password_file,
     };
 
     // ── run() tests ──────────────────────────────────────────────────────────
@@ -538,7 +538,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let manifest = write_minimal_project(dir.path(), "testapp");
         let output = dir.path().join("out.vibeapp");
-        super::run(&manifest, Some(&output), None, Some("hunter2"), None).unwrap();
+        let pw = random_test_password();
+        super::run(&manifest, Some(&output), None, Some(&pw), None).unwrap();
         assert!(crate::crypto::is_encrypted_package(&output));
     }
 
@@ -546,7 +547,8 @@ mod tests {
     fn with_password_file() {
         let dir = tempdir().unwrap();
         let manifest = write_minimal_project(dir.path(), "testapp");
-        let pw_file = write_password_file(dir.path(), "mypassword");
+        let pw = random_test_password();
+        let pw_file = write_password_file(dir.path(), &pw);
         let output = dir.path().join("out.vibeapp");
         super::run(&manifest, Some(&output), None, None, Some(&pw_file)).unwrap();
         assert!(crate::crypto::is_encrypted_package(&output));

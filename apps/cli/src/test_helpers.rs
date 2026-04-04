@@ -135,3 +135,10 @@ pub fn write_password_file(dir: &Path, password: &str) -> PathBuf {
     fs::write(&path, password).unwrap();
     path
 }
+
+/// Generate a random test password. Returns a non-hardcoded hex string so that
+/// tests do not embed fixed cryptographic values in source code.
+pub fn random_test_password() -> String {
+    let n: u64 = rand::random();
+    format!("tp-{:016x}", n)
+}

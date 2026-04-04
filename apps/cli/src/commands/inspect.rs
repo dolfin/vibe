@@ -95,8 +95,8 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::test_helpers::{
-        build_encrypted_package, build_signed_package, make_zip, write_minimal_project,
-        write_password_file,
+        build_encrypted_package, build_signed_package, make_zip, random_test_password,
+        write_minimal_project, write_password_file,
     };
 
     #[test]
@@ -122,8 +122,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let manifest = write_minimal_project(dir.path(), "testapp");
         let output = dir.path().join("out.vibeapp");
-        build_encrypted_package(&manifest, &output, "pw123");
-        assert!(super::run(&output, Some("pw123"), None).is_ok());
+        let pw = random_test_password();
+        build_encrypted_package(&manifest, &output, &pw);
+        assert!(super::run(&output, Some(&pw), None).is_ok());
     }
 
     #[test]
@@ -131,8 +132,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let manifest = write_minimal_project(dir.path(), "testapp");
         let output = dir.path().join("out.vibeapp");
-        build_encrypted_package(&manifest, &output, "pw123");
-        let pw_file = write_password_file(dir.path(), "pw123");
+        let pw = random_test_password();
+        build_encrypted_package(&manifest, &output, &pw);
+        let pw_file = write_password_file(dir.path(), &pw);
         assert!(super::run(&output, None, Some(&pw_file)).is_ok());
     }
 
@@ -141,8 +143,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let manifest = write_minimal_project(dir.path(), "testapp");
         let output = dir.path().join("out.vibeapp");
-        build_encrypted_package(&manifest, &output, "correct");
-        assert!(super::run(&output, Some("wrong"), None).is_err());
+        let pw = random_test_password();
+        build_encrypted_package(&manifest, &output, &pw);
+        let wrong = format!("{}!", pw);
+        assert!(super::run(&output, Some(&wrong), None).is_err());
     }
 
     #[test]

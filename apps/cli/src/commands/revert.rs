@@ -108,7 +108,7 @@ mod tests {
     use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
 
-    use crate::test_helpers::{build_encrypted_package, make_zip, write_minimal_project};
+    use crate::test_helpers::{build_encrypted_package, make_zip, random_test_password, write_minimal_project};
 
     fn make_zip_with_state() -> Vec<u8> {
         crate::test_helpers::make_zip(&[
@@ -165,10 +165,11 @@ mod tests {
         let dir = tempdir().unwrap();
         let manifest = write_minimal_project(dir.path(), "testapp");
         let output = dir.path().join("out.vibeapp");
-        build_encrypted_package(&manifest, &output, "pw123");
+        let pw = random_test_password();
+        build_encrypted_package(&manifest, &output, &pw);
 
         // Inject a _vibe_state entry into the encrypted package
-        let inner = crate::crypto::open_package(&output, Some("pw123"), None).unwrap();
+        let inner = crate::crypto::open_package(&output, Some(&pw), None).unwrap();
         let inner_data = std::fs::read(&output).unwrap(); // dummy; we'll rebuild
         let _ = inner_data;
 
@@ -194,10 +195,10 @@ mod tests {
             writer.finish().unwrap();
             buf
         };
-        let (ct, meta) = crate::crypto::encrypt_package(&inner_with_state, b"pw123").unwrap();
+        let (ct, meta) = crate::crypto::encrypt_package(&inner_with_state, pw.as_bytes()).unwrap();
         crate::crypto::write_encrypted_vibeapp(&ct, &meta, &output).unwrap();
 
-        super::run(&output, Some("pw123"), None).unwrap();
+        super::run(&output, Some(&pw), None).unwrap();
         assert!(crate::crypto::is_encrypted_package(&output));
     }
 
@@ -206,8 +207,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let manifest = write_minimal_project(dir.path(), "testapp");
         let output = dir.path().join("out.vibeapp");
-        build_encrypted_package(&manifest, &output, "correct");
-        assert!(super::run(&output, Some("wrong"), None).is_err());
+        let pw = random_test_password();
+        build_encrypted_package(&manifest, &output, &pw);
+        let wrong = format!("{}!", pw);
+        assert!(super::run(&output, Some(&wrong), None).is_err());
     }
 
     #[test]

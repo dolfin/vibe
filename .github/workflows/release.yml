@@ -20,6 +20,8 @@ jobs:
   test-rust:
     name: Test (Rust)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -46,6 +48,8 @@ jobs:
   test-swift:
     name: Test (Swift)
     runs-on: macos-26
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: apps/mac-host
@@ -68,6 +72,8 @@ jobs:
     name: Build CLI (${{ matrix.target }})
     needs: [test-rust, test-swift]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -117,6 +123,7 @@ jobs:
     name: Create Universal CLI
     needs: build-cli
     runs-on: macos-26
+    permissions: {}
     steps:
       - name: Download arm64 binary
         uses: actions/download-artifact@v8
@@ -156,6 +163,7 @@ jobs:
     name: Package Linux CLI
     needs: build-cli
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Download Linux binary
         uses: actions/download-artifact@v8
@@ -183,6 +191,8 @@ jobs:
     name: Build macOS App
     needs: [test-rust, test-swift]
     runs-on: macos-26
+    permissions:
+      contents: read
     env:
       KEYCHAIN_NAME: release.keychain
       KEYCHAIN_PASSWORD: ci-temp-keychain
@@ -414,6 +424,7 @@ jobs:
     name: Update Homebrew Tap
     needs: github-release
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Download universal CLI tarball
         uses: actions/download-artifact@v8

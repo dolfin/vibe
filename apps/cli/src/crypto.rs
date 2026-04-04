@@ -288,6 +288,7 @@ fn hex_decode_12(s: &str) -> Result<[u8; 12]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::random_test_password;
     use tempfile::tempdir;
 
     fn make_dummy_zip() -> Vec<u8> {
@@ -303,17 +304,19 @@ mod tests {
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
         let data = b"Hello Vibe!".to_vec();
-        let password = b"hunter2";
-        let (ciphertext, meta) = encrypt_package(&data, password).unwrap();
-        let plaintext = decrypt_package(&ciphertext, password, &meta).unwrap();
+        let password = random_test_password();
+        let (ciphertext, meta) = encrypt_package(&data, password.as_bytes()).unwrap();
+        let plaintext = decrypt_package(&ciphertext, password.as_bytes(), &meta).unwrap();
         assert_eq!(plaintext, data);
     }
 
     #[test]
     fn test_wrong_password_fails() {
         let data = b"secret data".to_vec();
-        let (ciphertext, meta) = encrypt_package(&data, b"correct").unwrap();
-        let result = decrypt_package(&ciphertext, b"wrong", &meta);
+        let pw = random_test_password();
+        let (ciphertext, meta) = encrypt_package(&data, pw.as_bytes()).unwrap();
+        let wrong = format!("{}!", pw); // guaranteed to differ from pw
+        let result = decrypt_package(&ciphertext, wrong.as_bytes(), &meta);
         assert!(result.is_err());
     }
 
@@ -321,7 +324,8 @@ mod tests {
     fn test_encrypted_zip_has_two_entries() {
         let dir = tempdir().unwrap();
         let dest = dir.path().join("out.vibeapp");
-        let (ciphertext, meta) = encrypt_package(b"payload", b"pw").unwrap();
+        let pw = random_test_password();
+        let (ciphertext, meta) = encrypt_package(b"payload", pw.as_bytes()).unwrap();
         write_encrypted_vibeapp(&ciphertext, &meta, &dest).unwrap();
 
         let data = fs::read(&dest).unwrap();
@@ -332,7 +336,8 @@ mod tests {
 
     #[test]
     fn test_metadata_json_fields() {
-        let (_, meta) = encrypt_package(b"test", b"pw").unwrap();
+        let pw = random_test_password();
+        let (_, meta) = encrypt_package(b"test", pw.as_bytes()).unwrap();
         assert_eq!(meta.version, 1);
         assert_eq!(meta.cipher, "aes-256-gcm");
         assert_eq!(meta.kdf, "argon2id");
@@ -345,8 +350,9 @@ mod tests {
 
     #[test]
     fn test_each_encryption_unique() {
-        let (ct1, _) = encrypt_package(b"same", b"pw").unwrap();
-        let (ct2, _) = encrypt_package(b"same", b"pw").unwrap();
+        let pw = random_test_password();
+        let (ct1, _) = encrypt_package(b"same", pw.as_bytes()).unwrap();
+        let (ct2, _) = encrypt_package(b"same", pw.as_bytes()).unwrap();
         assert_ne!(ct1, ct2, "Encryptions must differ due to random salt/nonce");
     }
 
@@ -356,7 +362,8 @@ mod tests {
         let enc_path = dir.path().join("enc.vibeapp");
         let plain_path = dir.path().join("plain.vibeapp");
 
-        let (ct, meta) = encrypt_package(b"data", b"pw").unwrap();
+        let pw = random_test_password();
+        let (ct, meta) = encrypt_package(b"data", pw.as_bytes()).unwrap();
         write_encrypted_vibeapp(&ct, &meta, &enc_path).unwrap();
         fs::write(&plain_path, make_dummy_zip()).unwrap();
 
@@ -380,10 +387,11 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("enc.vibeapp");
         let original = make_dummy_zip();
-        let (ct, meta) = encrypt_package(&original, b"secret").unwrap();
+        let pw = random_test_password();
+        let (ct, meta) = encrypt_package(&original, pw.as_bytes()).unwrap();
         write_encrypted_vibeapp(&ct, &meta, &path).unwrap();
 
-        let result = open_package(&path, Some("secret"), None).unwrap();
+        let result = open_package(&path, Some(&pw), None).unwrap();
         assert_eq!(result, original);
     }
 
@@ -535,7 +543,7 @@ mod tests {
             },
             nonce: "000000000000000000000000".to_string(),
         };
-        let result = derive_key(b"password", &meta);
+        let result = derive_key(random_test_password().as_bytes(), &meta);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
         assert!(
