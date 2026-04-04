@@ -108,7 +108,9 @@ mod tests {
     use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
 
-    use crate::test_helpers::{build_encrypted_package, make_zip, random_test_password, write_minimal_project};
+    use crate::test_helpers::{
+        build_encrypted_package, make_zip, random_test_password, write_minimal_project,
+    };
 
     fn make_zip_with_state() -> Vec<u8> {
         crate::test_helpers::make_zip(&[
