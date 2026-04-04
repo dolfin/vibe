@@ -121,13 +121,8 @@ jobs:
           # Sync Cargo.lock (no compilation — just resolves the workspace metadata)
           cargo fetch --quiet
 
-          # Keep macOS app MARKETING_VERSION and CURRENT_PROJECT_VERSION in sync.
-          # Sparkle compares CFBundleVersion (CURRENT_PROJECT_VERSION) against
-          # sparkle:version in the appcast — both must track the same value or
-          # Sparkle will incorrectly conclude no update is available.
+          # Keep macOS app MARKETING_VERSION in sync
           sed -i "s/MARKETING_VERSION = .*/MARKETING_VERSION = $NEW;/" \
-            apps/mac-host/VibeHost.xcodeproj/project.pbxproj
-          sed -i "s/CURRENT_PROJECT_VERSION = .*/CURRENT_PROJECT_VERSION = $NEW;/" \
             apps/mac-host/VibeHost.xcodeproj/project.pbxproj
 
           echo "old=$OLD" >> "$GITHUB_OUTPUT"

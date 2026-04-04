@@ -248,7 +248,8 @@ jobs:
             CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_NAME"
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_NAME" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
 
       - name: Export archive
         run: |
@@ -324,7 +325,7 @@ jobs:
               <item>
                 <title>Version ${VERSION}</title>
                 <pubDate>${PUB_DATE}</pubDate>
-                <sparkle:version>${VERSION}</sparkle:version>
+                <sparkle:version>${{ github.run_number }}</sparkle:version>
                 <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
                 <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
                 <enclosure
