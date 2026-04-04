@@ -35,7 +35,13 @@ Vibe lets you package an AI-built app into a single file and send it to anyone. 
 
 ### Open a `.vibeapp`
 
-Download **Vibe for Mac** from the [Releases page](https://github.com/dolfin/vibe/releases) and double-click any `.vibeapp` file.
+Download **Vibe for Mac** from the [Releases page](https://github.com/dolfin/vibe/releases), or install via Homebrew:
+
+```bash
+brew tap dolfin/vibe && brew install --cask vibe-app
+```
+
+Then double-click any `.vibeapp` file.
 
 ### Package an app
 
