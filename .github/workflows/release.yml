@@ -426,14 +426,23 @@ jobs:
           name: vibe-linux-x86_64
           path: artifacts
 
+      - name: Download DMG artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: Vibe-dmg
+          path: artifacts
+
       - name: Compute checksums
         run: |
           MACOS_TARBALL=$(find artifacts -name "*macos-universal*" | head -1)
           LINUX_TARBALL=$(find artifacts -name "*linux-x86_64*" | head -1)
+          DMG=$(find artifacts -name "Vibe.dmg" | head -1)
           MACOS_SHA256=$(sha256sum "$MACOS_TARBALL" | awk '{print $1}')
           LINUX_SHA256=$(sha256sum "$LINUX_TARBALL" | awk '{print $1}')
+          DMG_SHA256=$(sha256sum "$DMG" | awk '{print $1}')
           echo "MACOS_SHA256=${MACOS_SHA256}" >> "$GITHUB_ENV"
           echo "LINUX_SHA256=${LINUX_SHA256}" >> "$GITHUB_ENV"
+          echo "DMG_SHA256=${DMG_SHA256}" >> "$GITHUB_ENV"
 
       - name: Push formula to homebrew tap
         env:
@@ -443,6 +452,7 @@ jobs:
           VERSION="${TAG#v}"
           MACOS_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/vibe-${VERSION}-macos-universal.tar.gz"
           LINUX_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/vibe-${VERSION}-linux-x86_64.tar.gz"
+          DMG_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/Vibe.dmg"
 
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/dolfin/homebrew-vibe.git" homebrew-vibe || {
             mkdir homebrew-vibe
@@ -460,7 +470,7 @@ jobs:
           cat > Formula/vibe.rb <<EOF
           class Vibe < Formula
             desc "CLI for packaging, signing, and managing Vibe apps"
-            homepage "https://github.com/dolfin/vibe"
+            homepage "https://dotvibe.app"
             version "${VERSION}"
 
             on_macos do
@@ -483,6 +493,21 @@ jobs:
           end
           EOF
 
-          git add Formula/vibe.rb
+          mkdir -p Casks
+          cat > Casks/vibe-app.rb <<EOF
+          cask "vibe-app" do
+            version "${VERSION}"
+            sha256 "${DMG_SHA256}"
+
+            url "${DMG_URL}"
+            name "Vibe"
+            desc "Turn AI-built apps into files you can share and open anywhere"
+            homepage "https://dotvibe.app"
+
+            app "Vibe.app"
+          end
+          EOF
+
+          git add Formula/vibe.rb Casks/vibe-app.rb
           git commit -m "vibe ${TAG}"
           git push origin HEAD:main
