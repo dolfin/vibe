@@ -4,14 +4,14 @@
     <title>Vibe</title>
     <link>https://github.com/dolfin/vibe</link>
     <item>
-      <title>Version 0.1.17</title>
-      <pubDate>Sat, 04 Apr 2026 21:22:21 +0000</pubDate>
-      <sparkle:version>16</sparkle:version>
-      <sparkle:shortVersionString>0.1.17</sparkle:shortVersionString>
+      <title>Version 0.1.18</title>
+      <pubDate>Sat, 04 Apr 2026 21:55:01 +0000</pubDate>
+      <sparkle:version>17</sparkle:version>
+      <sparkle:shortVersionString>0.1.18</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <enclosure
-        url="https://github.com/dolfin/vibe/releases/download/v0.1.17/Vibe.dmg"
-        sparkle:edSignature="hb+ZQPGigBOCn3JPj8/Inw9vWXhXBV5VXnC7O9miFBbe/KYWpZzMjxy0y9s5uz7Vvv6St/d02WGKSaoU7cVxAQ==" length="24993556"
+        url="https://github.com/dolfin/vibe/releases/download/v0.1.18/Vibe.dmg"
+        sparkle:edSignature="A1vsN94JpWhYzZpYiTZX9tj65qN0IUK2AhjPTgswxc4lhKANqT3iCJoZcgxAmeUGSPpdcy91QNHKvtWj7b/8Ag==" length="24993310"
         type="application/octet-stream"/>
     </item>
   </channel>
