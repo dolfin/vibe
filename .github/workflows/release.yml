@@ -273,9 +273,9 @@ jobs:
             --icon "Vibe.app" 180 160 \
             --app-drop-link 480 160 \
             --no-internet-enable \
-            "$RUNNER_TEMP/Vibe-${VERSION}.dmg" \
+            "$RUNNER_TEMP/Vibe.dmg" \
             "$RUNNER_TEMP/export/Vibe.app"
-          echo "DMG_PATH=$RUNNER_TEMP/Vibe-${VERSION}.dmg" >> "$GITHUB_ENV"
+          echo "DMG_PATH=$RUNNER_TEMP/Vibe.dmg" >> "$GITHUB_ENV"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
       - name: Notarize DMG
@@ -314,7 +314,7 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
-          DMG_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/Vibe-${VERSION}.dmg"
+          DMG_URL="https://github.com/dolfin/vibe/releases/download/${TAG}/Vibe.dmg"
           cat > appcast.xml <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
@@ -340,7 +340,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: Vibe-dmg
-          path: "${{ runner.temp }}/Vibe-*.dmg"
+          path: "${{ runner.temp }}/Vibe.dmg"
 
       - name: Upload appcast artifact
         uses: actions/upload-artifact@v7
