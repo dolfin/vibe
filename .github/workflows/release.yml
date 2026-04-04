@@ -268,6 +268,27 @@ jobs:
             -exportOptionsPlist apps/mac-host/ExportOptions.plist \
             -exportPath "$RUNNER_TEMP/export"
 
+      - name: Re-sign Sparkle XPC services
+        run: |
+          # Sparkle's XPC services are pre-built and ad-hoc signed in the
+          # xcframework. xcodebuild does not reliably re-sign them during
+          # export, so we do it explicitly here. They must be signed with
+          # the same Developer ID as the app or macOS will refuse to launch
+          # them (producing "An error occurred while launching the installer").
+          APP="$RUNNER_TEMP/export/Vibe.app"
+          SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices"
+          IDENTITY="Developer ID Application"
+
+          codesign --force --sign "$IDENTITY" --options runtime --timestamp \
+            "$SPARKLE/Installer.xpc"
+          codesign --force --sign "$IDENTITY" --options runtime --timestamp \
+            "$SPARKLE/Downloader.xpc"
+
+          # Re-sign the app bundle to incorporate the updated XPC signatures
+          codesign --force --sign "$IDENTITY" --options runtime --timestamp \
+            --entitlements apps/mac-host/VibeHost/VibeHost.entitlements \
+            "$APP"
+
       - name: Install create-dmg
         run: brew install create-dmg
 
