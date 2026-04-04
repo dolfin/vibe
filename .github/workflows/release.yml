@@ -295,6 +295,13 @@ jobs:
           codesign --force --sign "$IDENTITY" --options runtime --timestamp \
             "$SPARKLE"
 
+          # Re-sign the app bundle last — modifying the framework invalidates
+          # the app's code directory seal. --preserve-metadata=entitlements
+          # keeps the entitlements xcodebuild already embedded.
+          codesign --force --sign "$IDENTITY" --options runtime --timestamp \
+            --preserve-metadata=entitlements \
+            "$APP"
+
       - name: Install create-dmg
         run: brew install create-dmg
 
