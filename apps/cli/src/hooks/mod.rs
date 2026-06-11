@@ -1,1 +1,1 @@
-pub const VIBE_SKILL: &str = include_str!("templates/vibe_skill.md");
+pub const VIBE_SKILL: &str = include_str!("../../../../.agents/skills/vibe/SKILL.md");

@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/dolfin/vibe/actions/workflows/ci.yml/badge.svg)](https://github.com/dolfin/vibe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![skills.sh](https://skills.sh/b/dolfin/vibe)](https://skills.sh/dolfin/vibe)
 
 **Turn AI-built apps into files you can share and open anywhere.**
 
@@ -54,6 +55,14 @@ vibe package vibe.yaml -o myapp.vibeapp
 ```
 
 Share `myapp.vibeapp` with anyone running macOS 14+.
+
+### Install the agent skill
+
+Use the Vibe agent skill when creating manifests, validating packages, or working with the CLI:
+
+```bash
+npx skills add dolfin/vibe --skill vibe -a codex
+```
 
 ---
 

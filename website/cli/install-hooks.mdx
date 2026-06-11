@@ -43,13 +43,13 @@ vibe install-hooks --force
 | Tool | File location |
 |---|---|
 | Claude Code | `.claude/skills/vibe/SKILL.md` |
-| Codex | `.codex/skills/vibe.md` |
-| Cursor | `.cursor/skills/vibe.md` |
-| GitHub Copilot | `.github/copilot-instructions.md` (appended) |
+| Codex | `.agents/skills/vibe/SKILL.md` |
+| Cursor | `.agents/skills/vibe/SKILL.md` |
+| GitHub Copilot | `.claude/skills/vibe/SKILL.md` |
 
 ## Notes
 
 - `project` scope installs into the current working directory
-- `user` scope installs into your home directory (`~/.claude/`, `~/.codex/`, etc.)
+- `user` scope installs into your home directory (`~/.claude/` and `~/.agents/`)
 - Skill files contain the Vibe manifest schema, CLI reference, and packaging best practices
 - Run with `--force` to update skill files when you upgrade the Vibe CLI

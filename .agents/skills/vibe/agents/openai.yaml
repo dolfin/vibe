@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vibe"
+  short_description: "Build and package Vibe apps"
+  default_prompt: "Use $vibe to create or validate a vibe.yaml manifest and package it as a .vibeapp."

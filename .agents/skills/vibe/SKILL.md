@@ -109,6 +109,13 @@ publisher:
 
 ## CLI Workflow
 
+If the `vibe` CLI is not installed, install it with Homebrew first:
+
+```bash
+brew tap dolfin/vibe
+brew install vibe
+```
+
 ```bash
 vibe init <name>                 # scaffold new project → creates <name>/vibe.yaml + <name>/.vibeignore
 vibe validate vibe.yaml          # check manifest for errors
