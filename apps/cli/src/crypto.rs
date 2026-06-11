@@ -91,7 +91,7 @@ pub fn derive_key(password: &[u8], meta: &EncryptionMetadata) -> Result<Zeroizin
 pub fn encrypt_package(plaintext: &[u8], password: &[u8]) -> Result<(Vec<u8>, EncryptionMetadata)> {
     let mut salt = [0u8; 32];
     let mut nonce_bytes = [0u8; 12];
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     rng.fill_bytes(&mut salt);
     rng.fill_bytes(&mut nonce_bytes);
 
